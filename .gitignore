@@ -1,0 +1,11 @@
+# Secrets / local config — never commit. Use app.env.example as the template.
+app.env
+
+# Build output
+/bin/
+/tmp/
+
+# OS / editor
+.DS_Store
+*.test
+*.out
