@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	db "github.com/mstoews/glutenfree-server/db/sqlc"
 	"github.com/mstoews/glutenfree-server/token"
 	"github.com/mstoews/glutenfree-server/util"
@@ -13,13 +15,13 @@ import (
 // Server serves the GlutenFree HTTP API.
 type Server struct {
 	config     util.Config
-	store      db.Store
+	store      db.Repository
 	tokenMaker token.Maker
 	router     *gin.Engine
 }
 
 // NewServer wires dependencies and routes.
-func NewServer(config util.Config, store db.Store) (*Server, error) {
+func NewServer(config util.Config, store db.Repository) (*Server, error) {
 	maker, err := token.NewJWTMaker(config.TokenSymmetricKey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create token maker: %w", err)
@@ -41,14 +43,18 @@ func (server *Server) setupRouter() {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// Public auth routes.
+	// Public routes.
 	router.POST("/auth/register", server.registerUser)
 	router.POST("/auth/login", server.loginUser)
 	router.POST("/auth/refresh", server.renewAccessToken)
+	router.GET("/wards", server.listWards)
 
 	// Authenticated routes.
 	authed := router.Group("/").Use(authMiddleware(server.tokenMaker))
 	authed.GET("/subscription/status", server.getSubscriptionStatus)
+	authed.GET("/stores", server.listStores)
+	authed.GET("/stores/:id", server.getStore)
+	authed.GET("/stores/:id/menu", server.getStoreMenu)
 
 	server.router = router
 }
@@ -60,4 +66,24 @@ func (server *Server) Start(address string) error {
 
 func errorResponse(err error) gin.H {
 	return gin.H{"error": err.Error()}
+}
+
+// currentUser loads the authenticated user named in the token payload.
+func (server *Server) currentUser(ctx *gin.Context) (db.User, error) {
+	payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	return server.store.GetUserByID(ctx, payload.UserID)
+}
+
+// isPaidUser reports whether the user has an active subscription.
+func isPaidUser(u db.User) bool {
+	return u.SubscriptionStatus == db.SubscriptionStatusActive
+}
+
+// respondUserLookupError maps a failed currentUser() lookup to a response.
+func respondUserLookupError(ctx *gin.Context, err error) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		ctx.JSON(http.StatusNotFound, errorResponse(errors.New("user not found")))
+		return
+	}
+	ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 }

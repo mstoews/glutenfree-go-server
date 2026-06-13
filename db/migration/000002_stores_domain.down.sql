@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS menu_items;
+DROP TYPE IF EXISTS gf_status;
+DROP TABLE IF EXISTS stores;
+DROP TYPE IF EXISTS store_status;
+DROP TABLE IF EXISTS wards;

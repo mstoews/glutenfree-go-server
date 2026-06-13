@@ -12,6 +12,93 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type GfStatus string
+
+const (
+	GfStatusCertified            GfStatus = "certified"
+	GfStatusOnRequest            GfStatus = "on_request"
+	GfStatusContainsHiddenGluten GfStatus = "contains_hidden_gluten"
+)
+
+func (e *GfStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = GfStatus(s)
+	case string:
+		*e = GfStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for GfStatus: %T", src)
+	}
+	return nil
+}
+
+type NullGfStatus struct {
+	GfStatus GfStatus `json:"gf_status"`
+	Valid    bool     `json:"valid"` // Valid is true if GfStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullGfStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.GfStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.GfStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullGfStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.GfStatus), nil
+}
+
+type StoreStatus string
+
+const (
+	StoreStatusDraft    StoreStatus = "draft"
+	StoreStatusPending  StoreStatus = "pending"
+	StoreStatusApproved StoreStatus = "approved"
+	StoreStatusRejected StoreStatus = "rejected"
+)
+
+func (e *StoreStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = StoreStatus(s)
+	case string:
+		*e = StoreStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for StoreStatus: %T", src)
+	}
+	return nil
+}
+
+type NullStoreStatus struct {
+	StoreStatus StoreStatus `json:"store_status"`
+	Valid       bool        `json:"valid"` // Valid is true if StoreStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullStoreStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.StoreStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.StoreStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullStoreStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.StoreStatus), nil
+}
+
 type SubscriptionStatus string
 
 const (
@@ -56,6 +143,20 @@ func (ns NullSubscriptionStatus) Value() (driver.Value, error) {
 	return string(ns.SubscriptionStatus), nil
 }
 
+type MenuItem struct {
+	ID          uuid.UUID          `json:"id"`
+	StoreID     uuid.UUID          `json:"store_id"`
+	Name        string             `json:"name"`
+	PriceYen    int32              `json:"price_yen"`
+	ImageUrl    pgtype.Text        `json:"image_url"`
+	GfStatus    GfStatus           `json:"gf_status"`
+	GfNote      pgtype.Text        `json:"gf_note"`
+	SortOrder   int32              `json:"sort_order"`
+	IsAvailable bool               `json:"is_available"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Session struct {
 	ID           uuid.UUID          `json:"id"`
 	UserID       uuid.UUID          `json:"user_id"`
@@ -67,6 +168,22 @@ type Session struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type Store struct {
+	ID              uuid.UUID          `json:"id"`
+	WardID          int32              `json:"ward_id"`
+	Name            string             `json:"name"`
+	Address         string             `json:"address"`
+	Latitude        float64            `json:"latitude"`
+	Longitude       float64            `json:"longitude"`
+	IsGfOriented    bool               `json:"is_gf_oriented"`
+	OpeningHours    []byte             `json:"opening_hours"`
+	Status          StoreStatus        `json:"status"`
+	RejectionReason pgtype.Text        `json:"rejection_reason"`
+	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type User struct {
 	ID                 uuid.UUID          `json:"id"`
 	Email              string             `json:"email"`
@@ -76,4 +193,10 @@ type User struct {
 	SubExpiresAt       pgtype.Timestamptz `json:"sub_expires_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Ward struct {
+	ID     int32  `json:"id"`
+	NameJa string `json:"name_ja"`
+	NameEn string `json:"name_en"`
 }

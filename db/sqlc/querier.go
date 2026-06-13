@@ -14,10 +14,18 @@ import (
 type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	GetApprovedStore(ctx context.Context, id uuid.UUID) (GetApprovedStoreRow, error)
 	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 	GetUserByAppleID(ctx context.Context, appleUserID pgtype.Text) (User, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetWard(ctx context.Context, id int32) (Ward, error)
+	// Keyset pagination over approved stores, ordered by id. Pass the zero UUID
+	// (00000000-...) as @cursor for the first page; it is less than every real id,
+	// so `id > @cursor` returns from the start. Optional ward filter via @ward_id.
+	ListApprovedStores(ctx context.Context, arg ListApprovedStoresParams) ([]ListApprovedStoresRow, error)
+	ListAvailableMenuItems(ctx context.Context, storeID uuid.UUID) ([]MenuItem, error)
+	ListWards(ctx context.Context) ([]Ward, error)
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (User, error)
 }
 
