@@ -55,6 +55,50 @@ func (ns NullGfStatus) Value() (driver.Value, error) {
 	return string(ns.GfStatus), nil
 }
 
+type ReceiptStatus string
+
+const (
+	ReceiptStatusActive       ReceiptStatus = "active"
+	ReceiptStatusExpired      ReceiptStatus = "expired"
+	ReceiptStatusRevoked      ReceiptStatus = "revoked"
+	ReceiptStatusBillingRetry ReceiptStatus = "billing_retry"
+)
+
+func (e *ReceiptStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReceiptStatus(s)
+	case string:
+		*e = ReceiptStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReceiptStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReceiptStatus struct {
+	ReceiptStatus ReceiptStatus `json:"receipt_status"`
+	Valid         bool          `json:"valid"` // Valid is true if ReceiptStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReceiptStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReceiptStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReceiptStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReceiptStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReceiptStatus), nil
+}
+
 type StoreStatus string
 
 const (
@@ -97,6 +141,48 @@ func (ns NullStoreStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.StoreStatus), nil
+}
+
+type SubscriptionEnvironment string
+
+const (
+	SubscriptionEnvironmentSandbox    SubscriptionEnvironment = "sandbox"
+	SubscriptionEnvironmentProduction SubscriptionEnvironment = "production"
+)
+
+func (e *SubscriptionEnvironment) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = SubscriptionEnvironment(s)
+	case string:
+		*e = SubscriptionEnvironment(s)
+	default:
+		return fmt.Errorf("unsupported scan type for SubscriptionEnvironment: %T", src)
+	}
+	return nil
+}
+
+type NullSubscriptionEnvironment struct {
+	SubscriptionEnvironment SubscriptionEnvironment `json:"subscription_environment"`
+	Valid                   bool                    `json:"valid"` // Valid is true if SubscriptionEnvironment is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullSubscriptionEnvironment) Scan(value interface{}) error {
+	if value == nil {
+		ns.SubscriptionEnvironment, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.SubscriptionEnvironment.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullSubscriptionEnvironment) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.SubscriptionEnvironment), nil
 }
 
 type SubscriptionStatus string
@@ -182,6 +268,18 @@ type Store struct {
 	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SubscriptionReceipt struct {
+	ID           uuid.UUID               `json:"id"`
+	UserID       uuid.UUID               `json:"user_id"`
+	OriginalTxID string                  `json:"original_tx_id"`
+	ProductID    string                  `json:"product_id"`
+	Environment  SubscriptionEnvironment `json:"environment"`
+	Status       ReceiptStatus           `json:"status"`
+	ExpiresAt    pgtype.Timestamptz      `json:"expires_at"`
+	CreatedAt    pgtype.Timestamptz      `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz      `json:"updated_at"`
 }
 
 type User struct {

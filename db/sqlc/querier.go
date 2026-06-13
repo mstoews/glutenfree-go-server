@@ -15,6 +15,7 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	GetApprovedStore(ctx context.Context, id uuid.UUID) (GetApprovedStoreRow, error)
+	GetReceiptByOriginalTxID(ctx context.Context, originalTxID string) (SubscriptionReceipt, error)
 	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 	GetUserByAppleID(ctx context.Context, appleUserID pgtype.Text) (User, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
@@ -27,6 +28,9 @@ type Querier interface {
 	ListAvailableMenuItems(ctx context.Context, storeID uuid.UUID) ([]MenuItem, error)
 	ListWards(ctx context.Context) ([]Ward, error)
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (User, error)
+	// One row per original transaction. Both /subscription/verify and the Apple
+	// webhook converge on this so the latest state always wins.
+	UpsertSubscriptionReceipt(ctx context.Context, arg UpsertSubscriptionReceiptParams) (SubscriptionReceipt, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -17,6 +17,12 @@ type Config struct {
 	AccessTokenDuration  time.Duration `mapstructure:"ACCESS_TOKEN_DURATION"`
 	RefreshTokenDuration time.Duration `mapstructure:"REFRESH_TOKEN_DURATION"`
 	AllowedOrigins       []string      `mapstructure:"ALLOWED_ORIGINS"`
+
+	// StoreKit 2 / App Store. AppleRootCAPath points at Apple Root CA - G3
+	// (PEM or DER); empty disables /subscription/verify and /webhooks/apple.
+	// AppleBundleID, if set, pins the verified transaction's bundle id.
+	AppleRootCAPath string `mapstructure:"APPLE_ROOT_CA_PATH"`
+	AppleBundleID   string `mapstructure:"APPLE_BUNDLE_ID"`
 }
 
 // LoadConfig reads configuration from app.env in the given path, with
