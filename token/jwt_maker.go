@@ -24,9 +24,14 @@ func NewJWTMaker(secretKey string) (*JWTMaker, error) {
 	return &JWTMaker{secretKey}, nil
 }
 
-// CreateToken signs a new token for the user, valid for the given duration.
+// CreateToken signs an app-user (RoleUser) token valid for the given duration.
 func (maker *JWTMaker) CreateToken(userID uuid.UUID, email string, duration time.Duration) (string, *Payload, error) {
-	payload, err := NewPayload(userID, email, duration)
+	return maker.CreateRoleToken(userID, email, RoleUser, nil, duration)
+}
+
+// CreateRoleToken signs a token with an explicit role and optional store scope.
+func (maker *JWTMaker) CreateRoleToken(userID uuid.UUID, email, role string, storeID *uuid.UUID, duration time.Duration) (string, *Payload, error) {
+	payload, err := NewPayload(userID, email, role, storeID, duration)
 	if err != nil {
 		return "", payload, err
 	}

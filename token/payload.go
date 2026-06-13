@@ -14,17 +14,26 @@ var (
 	ErrInvalidToken = errors.New("token is invalid")
 )
 
+// Roles carried in a token payload.
+const (
+	RoleUser       = "user"        // app subscriber
+	RoleStoreAdmin = "store_admin" // manages one store via /admin/*
+	RoleInternal   = "internal"    // ops review queue via /internal/*
+)
+
 // Payload is the data carried inside a token. It implements jwt.Claims (v5).
 type Payload struct {
-	ID        uuid.UUID `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
-	Email     string    `json:"email"`
-	IssuedAt  time.Time `json:"issued_at"`
-	ExpiredAt time.Time `json:"expired_at"`
+	ID        uuid.UUID  `json:"id"`
+	UserID    uuid.UUID  `json:"user_id"` // app user, store_admin, or internal_admin id
+	Email     string     `json:"email"`
+	Role      string     `json:"role"`
+	StoreID   *uuid.UUID `json:"store_id,omitempty"` // set for store_admin tokens
+	IssuedAt  time.Time  `json:"issued_at"`
+	ExpiredAt time.Time  `json:"expired_at"`
 }
 
-// NewPayload builds a payload for a user valid for the given duration.
-func NewPayload(userID uuid.UUID, email string, duration time.Duration) (*Payload, error) {
+// NewPayload builds a token payload valid for the given duration.
+func NewPayload(userID uuid.UUID, email, role string, storeID *uuid.UUID, duration time.Duration) (*Payload, error) {
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -35,6 +44,8 @@ func NewPayload(userID uuid.UUID, email string, duration time.Duration) (*Payloa
 		ID:        tokenID,
 		UserID:    userID,
 		Email:     email,
+		Role:      role,
+		StoreID:   storeID,
 		IssuedAt:  now,
 		ExpiredAt: now.Add(duration),
 	}, nil

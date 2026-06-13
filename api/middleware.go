@@ -50,3 +50,16 @@ func authMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
 		ctx.Next()
 	}
 }
+
+// requireRole aborts with 403 unless the authenticated token carries the given
+// role. Must run after authMiddleware.
+func requireRole(role string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		payload, ok := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+		if !ok || payload.Role != role {
+			ctx.AbortWithStatusJSON(http.StatusForbidden, errorResponse(errors.New("forbidden: insufficient role")))
+			return
+		}
+		ctx.Next()
+	}
+}

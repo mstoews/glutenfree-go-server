@@ -66,13 +66,32 @@ func (server *Server) setupRouter() {
 	router.GET("/wards", server.listWards)
 	router.POST("/webhooks/apple", server.appleWebhook) // App Store Server Notifications
 
-	// Authenticated routes.
+	// Authenticated app-user routes.
 	authed := router.Group("/").Use(authMiddleware(server.tokenMaker))
 	authed.GET("/subscription/status", server.getSubscriptionStatus)
 	authed.POST("/subscription/verify", server.verifySubscription)
 	authed.GET("/stores", server.listStores)
 	authed.GET("/stores/:id", server.getStore)
 	authed.GET("/stores/:id/menu", server.getStoreMenu)
+
+	// Store-admin portal (/admin/*): one store per admin account.
+	router.POST("/admin/auth/login", server.adminLogin)
+	adminGrp := router.Group("/admin").Use(authMiddleware(server.tokenMaker), requireRole(token.RoleStoreAdmin))
+	adminGrp.GET("/store", server.adminGetStore)
+	adminGrp.PUT("/store", server.adminUpdateStore)
+	adminGrp.POST("/store/submit", server.adminSubmitStore)
+	adminGrp.GET("/store/menu", server.adminListMenu)
+	adminGrp.POST("/store/menu", server.adminCreateMenu)
+	adminGrp.PUT("/store/menu/:id", server.adminUpdateMenu)
+	adminGrp.DELETE("/store/menu/:id", server.adminDeleteMenu)
+
+	// Internal ops (/internal/*): review queue + onboarding.
+	router.POST("/internal/auth/login", server.internalLogin)
+	internalGrp := router.Group("/internal").Use(authMiddleware(server.tokenMaker), requireRole(token.RoleInternal))
+	internalGrp.POST("/store-admins", server.provisionStoreAdmin)
+	internalGrp.GET("/stores", server.internalListStores)
+	internalGrp.POST("/stores/:id/approve", server.approveStore)
+	internalGrp.POST("/stores/:id/reject", server.rejectStore)
 
 	server.router = router
 }

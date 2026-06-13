@@ -12,11 +12,21 @@ import (
 )
 
 type Querier interface {
+	ApproveStore(ctx context.Context, id uuid.UUID) (Store, error)
+	CreateInternalAdmin(ctx context.Context, arg CreateInternalAdminParams) (InternalAdmin, error)
+	CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateStore(ctx context.Context, arg CreateStoreParams) (Store, error)
+	CreateStoreAdmin(ctx context.Context, arg CreateStoreAdminParams) (StoreAdmin, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteMenuItem(ctx context.Context, arg DeleteMenuItemParams) (int64, error)
 	GetApprovedStore(ctx context.Context, id uuid.UUID) (GetApprovedStoreRow, error)
+	GetInternalAdminByEmail(ctx context.Context, lower string) (InternalAdmin, error)
 	GetReceiptByOriginalTxID(ctx context.Context, originalTxID string) (SubscriptionReceipt, error)
 	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
+	GetStoreAdminByEmail(ctx context.Context, lower string) (StoreAdmin, error)
+	GetStoreAdminByID(ctx context.Context, id uuid.UUID) (StoreAdmin, error)
+	GetStoreByID(ctx context.Context, id uuid.UUID) (Store, error)
 	GetUserByAppleID(ctx context.Context, appleUserID pgtype.Text) (User, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
@@ -26,7 +36,14 @@ type Querier interface {
 	// so `id > @cursor` returns from the start. Optional ward filter via @ward_id.
 	ListApprovedStores(ctx context.Context, arg ListApprovedStoresParams) ([]ListApprovedStoresRow, error)
 	ListAvailableMenuItems(ctx context.Context, storeID uuid.UUID) ([]MenuItem, error)
+	ListMenuItemsByStore(ctx context.Context, storeID uuid.UUID) ([]MenuItem, error)
+	ListStoresByStatus(ctx context.Context, status StoreStatus) ([]ListStoresByStatusRow, error)
 	ListWards(ctx context.Context) ([]Ward, error)
+	RejectStore(ctx context.Context, arg RejectStoreParams) (Store, error)
+	// First submit or resubmit after rejection -> back to the review queue.
+	SubmitStore(ctx context.Context, id uuid.UUID) (Store, error)
+	UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error)
+	UpdateStoreProfile(ctx context.Context, arg UpdateStoreProfileParams) (Store, error)
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (User, error)
 	// One row per original transaction. Both /subscription/verify and the Apple
 	// webhook converge on this so the latest state always wins.

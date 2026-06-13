@@ -229,6 +229,13 @@ func (ns NullSubscriptionStatus) Value() (driver.Value, error) {
 	return string(ns.SubscriptionStatus), nil
 }
 
+type InternalAdmin struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type MenuItem struct {
 	ID          uuid.UUID          `json:"id"`
 	StoreID     uuid.UUID          `json:"store_id"`
@@ -268,6 +275,15 @@ type Store struct {
 	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type StoreAdmin struct {
+	ID           uuid.UUID          `json:"id"`
+	StoreID      uuid.UUID          `json:"store_id"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SubscriptionReceipt struct {
