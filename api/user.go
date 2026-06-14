@@ -113,6 +113,13 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		return
 	}
 
+	server.issueSession(ctx, user)
+}
+
+// issueSession mints an access + refresh token, persists the refresh session,
+// and writes the standard login response. Shared by password login and Apple
+// sign-in.
+func (server *Server) issueSession(ctx *gin.Context, user db.User) {
 	accessToken, accessPayload, err := server.tokenMaker.CreateToken(
 		user.ID, user.Email, server.config.AccessTokenDuration)
 	if err != nil {
@@ -148,4 +155,14 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		SessionID:             session.ID,
 		User:                  newUserResponse(user),
 	})
+}
+
+// getCurrentUser returns the authenticated user's profile (GET /me).
+func (server *Server) getCurrentUser(ctx *gin.Context) {
+	user, err := server.currentUser(ctx)
+	if err != nil {
+		respondUserLookupError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, newUserResponse(user))
 }

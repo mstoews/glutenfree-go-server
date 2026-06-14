@@ -25,17 +25,33 @@ type Config struct {
 	AppleBundleID   string `mapstructure:"APPLE_BUNDLE_ID"`
 }
 
+// envKeys are bound explicitly so that, in a container with no app.env file,
+// values can be supplied purely through environment variables (12-factor).
+var envKeys = []string{
+	"ENVIRONMENT", "DB_SOURCE", "MIGRATION_URL", "HTTP_SERVER_ADDRESS",
+	"TOKEN_SYMMETRIC_KEY", "ACCESS_TOKEN_DURATION", "REFRESH_TOKEN_DURATION",
+	"ALLOWED_ORIGINS", "APPLE_ROOT_CA_PATH", "APPLE_BUNDLE_ID",
+}
+
 // LoadConfig reads configuration from app.env in the given path, with
-// environment variables overriding file values.
+// environment variables overriding file values. A missing app.env is not an
+// error: the service then runs purely from environment variables.
 func LoadConfig(path string) (config Config, err error) {
 	viper.AddConfigPath(path)
 	viper.SetConfigName("app")
 	viper.SetConfigType("env")
 
 	viper.AutomaticEnv()
+	for _, key := range envKeys {
+		_ = viper.BindEnv(key)
+	}
 
 	if err = viper.ReadInConfig(); err != nil {
-		return
+		// No app.env file is fine — fall back to environment variables only.
+		if _, notFound := err.(viper.ConfigFileNotFoundError); !notFound {
+			return
+		}
+		err = nil
 	}
 
 	err = viper.Unmarshal(&config)

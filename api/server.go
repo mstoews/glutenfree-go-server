@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/mstoews/glutenfree-server/applesignin"
 	"github.com/mstoews/glutenfree-server/appstore"
 	db "github.com/mstoews/glutenfree-server/db/sqlc"
 	"github.com/mstoews/glutenfree-server/token"
@@ -19,7 +20,8 @@ type Server struct {
 	config     util.Config
 	store      db.Repository
 	tokenMaker token.Maker
-	appstore   *appstore.Verifier // nil when StoreKit verification is not configured
+	appstore   *appstore.Verifier    // nil when StoreKit verification is not configured
+	apple      *applesignin.Verifier // nil when Sign in with Apple is not configured
 	router     *gin.Engine
 }
 
@@ -48,6 +50,14 @@ func NewServer(config util.Config, store db.Repository) (*Server, error) {
 		log.Warn().Msg("APPLE_ROOT_CA_PATH not set; /subscription/verify and /webhooks/apple are disabled")
 	}
 
+	// Sign in with Apple is optional: the bundle id is the identity token's
+	// audience. Without it, /auth/apple returns 501.
+	if config.AppleBundleID != "" {
+		server.apple = applesignin.NewAppleVerifier(config.AppleBundleID)
+	} else {
+		log.Warn().Msg("APPLE_BUNDLE_ID not set; /auth/apple is disabled")
+	}
+
 	server.setupRouter()
 	return server, nil
 }
@@ -62,12 +72,14 @@ func (server *Server) setupRouter() {
 	// Public routes.
 	router.POST("/auth/register", server.registerUser)
 	router.POST("/auth/login", server.loginUser)
+	router.POST("/auth/apple", server.appleSignIn) // Sign in with Apple
 	router.POST("/auth/refresh", server.renewAccessToken)
 	router.GET("/wards", server.listWards)
 	router.POST("/webhooks/apple", server.appleWebhook) // App Store Server Notifications
 
 	// Authenticated app-user routes.
 	authed := router.Group("/").Use(authMiddleware(server.tokenMaker))
+	authed.GET("/me", server.getCurrentUser)
 	authed.GET("/subscription/status", server.getSubscriptionStatus)
 	authed.POST("/subscription/verify", server.verifySubscription)
 	authed.GET("/stores", server.listStores)

@@ -1,0 +1,8 @@
+# Never bake secrets or local build output into the image.
+app.env
+bin/
+.git
+.gitignore
+Dockerfile
+.dockerignore
+*.md
