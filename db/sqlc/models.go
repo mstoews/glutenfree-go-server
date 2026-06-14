@@ -275,6 +275,14 @@ type Store struct {
 	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Cuisine         string             `json:"cuisine"`
+	PriceLevel      int32              `json:"price_level"`
+	Rating          float32            `json:"rating"`
+	ReviewCount     int32              `json:"review_count"`
+	NearestStation  string             `json:"nearest_station"`
+	Blurb           string             `json:"blurb"`
+	GfStatus        GfStatus           `json:"gf_status"`
+	PhotoUrl        pgtype.Text        `json:"photo_url"`
 }
 
 type StoreAdmin struct {

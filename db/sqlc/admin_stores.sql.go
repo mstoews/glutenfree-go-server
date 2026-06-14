@@ -16,7 +16,7 @@ const approveStore = `-- name: ApproveStore :one
 UPDATE stores
 SET status = 'approved', approved_at = now(), rejection_reason = NULL, updated_at = now()
 WHERE id = $1 AND status = 'pending'
-RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at
+RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at, cuisine, price_level, rating, review_count, nearest_station, blurb, gf_status, photo_url
 `
 
 func (q *Queries) ApproveStore(ctx context.Context, id uuid.UUID) (Store, error) {
@@ -36,6 +36,14 @@ func (q *Queries) ApproveStore(ctx context.Context, id uuid.UUID) (Store, error)
 		&i.ApprovedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cuisine,
+		&i.PriceLevel,
+		&i.Rating,
+		&i.ReviewCount,
+		&i.NearestStation,
+		&i.Blurb,
+		&i.GfStatus,
+		&i.PhotoUrl,
 	)
 	return i, err
 }
@@ -43,7 +51,7 @@ func (q *Queries) ApproveStore(ctx context.Context, id uuid.UUID) (Store, error)
 const createStore = `-- name: CreateStore :one
 INSERT INTO stores (ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')
-RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at
+RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at, cuisine, price_level, rating, review_count, nearest_station, blurb, gf_status, photo_url
 `
 
 type CreateStoreParams struct {
@@ -81,12 +89,20 @@ func (q *Queries) CreateStore(ctx context.Context, arg CreateStoreParams) (Store
 		&i.ApprovedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cuisine,
+		&i.PriceLevel,
+		&i.Rating,
+		&i.ReviewCount,
+		&i.NearestStation,
+		&i.Blurb,
+		&i.GfStatus,
+		&i.PhotoUrl,
 	)
 	return i, err
 }
 
 const getStoreByID = `-- name: GetStoreByID :one
-SELECT id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at FROM stores WHERE id = $1
+SELECT id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at, cuisine, price_level, rating, review_count, nearest_station, blurb, gf_status, photo_url FROM stores WHERE id = $1
 `
 
 func (q *Queries) GetStoreByID(ctx context.Context, id uuid.UUID) (Store, error) {
@@ -106,12 +122,20 @@ func (q *Queries) GetStoreByID(ctx context.Context, id uuid.UUID) (Store, error)
 		&i.ApprovedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cuisine,
+		&i.PriceLevel,
+		&i.Rating,
+		&i.ReviewCount,
+		&i.NearestStation,
+		&i.Blurb,
+		&i.GfStatus,
+		&i.PhotoUrl,
 	)
 	return i, err
 }
 
 const listStoresByStatus = `-- name: ListStoresByStatus :many
-SELECT s.id, s.ward_id, s.name, s.address, s.latitude, s.longitude, s.is_gf_oriented, s.opening_hours, s.status, s.rejection_reason, s.approved_at, s.created_at, s.updated_at, w.name_ja AS ward_name_ja, w.name_en AS ward_name_en
+SELECT s.id, s.ward_id, s.name, s.address, s.latitude, s.longitude, s.is_gf_oriented, s.opening_hours, s.status, s.rejection_reason, s.approved_at, s.created_at, s.updated_at, s.cuisine, s.price_level, s.rating, s.review_count, s.nearest_station, s.blurb, s.gf_status, s.photo_url, w.name_ja AS ward_name_ja, w.name_en AS ward_name_en
 FROM stores s
 JOIN wards w ON w.id = s.ward_id
 WHERE s.status = $1
@@ -132,6 +156,14 @@ type ListStoresByStatusRow struct {
 	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Cuisine         string             `json:"cuisine"`
+	PriceLevel      int32              `json:"price_level"`
+	Rating          float32            `json:"rating"`
+	ReviewCount     int32              `json:"review_count"`
+	NearestStation  string             `json:"nearest_station"`
+	Blurb           string             `json:"blurb"`
+	GfStatus        GfStatus           `json:"gf_status"`
+	PhotoUrl        pgtype.Text        `json:"photo_url"`
 	WardNameJa      string             `json:"ward_name_ja"`
 	WardNameEn      string             `json:"ward_name_en"`
 }
@@ -159,6 +191,14 @@ func (q *Queries) ListStoresByStatus(ctx context.Context, status StoreStatus) ([
 			&i.ApprovedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Cuisine,
+			&i.PriceLevel,
+			&i.Rating,
+			&i.ReviewCount,
+			&i.NearestStation,
+			&i.Blurb,
+			&i.GfStatus,
+			&i.PhotoUrl,
 			&i.WardNameJa,
 			&i.WardNameEn,
 		); err != nil {
@@ -176,7 +216,7 @@ const rejectStore = `-- name: RejectStore :one
 UPDATE stores
 SET status = 'rejected', rejection_reason = $2, updated_at = now()
 WHERE id = $1 AND status = 'pending'
-RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at
+RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at, cuisine, price_level, rating, review_count, nearest_station, blurb, gf_status, photo_url
 `
 
 type RejectStoreParams struct {
@@ -201,6 +241,14 @@ func (q *Queries) RejectStore(ctx context.Context, arg RejectStoreParams) (Store
 		&i.ApprovedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cuisine,
+		&i.PriceLevel,
+		&i.Rating,
+		&i.ReviewCount,
+		&i.NearestStation,
+		&i.Blurb,
+		&i.GfStatus,
+		&i.PhotoUrl,
 	)
 	return i, err
 }
@@ -209,7 +257,7 @@ const submitStore = `-- name: SubmitStore :one
 UPDATE stores
 SET status = 'pending', rejection_reason = NULL, updated_at = now()
 WHERE id = $1 AND status IN ('draft', 'rejected')
-RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at
+RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at, cuisine, price_level, rating, review_count, nearest_station, blurb, gf_status, photo_url
 `
 
 // First submit or resubmit after rejection -> back to the review queue.
@@ -230,6 +278,14 @@ func (q *Queries) SubmitStore(ctx context.Context, id uuid.UUID) (Store, error) 
 		&i.ApprovedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cuisine,
+		&i.PriceLevel,
+		&i.Rating,
+		&i.ReviewCount,
+		&i.NearestStation,
+		&i.Blurb,
+		&i.GfStatus,
+		&i.PhotoUrl,
 	)
 	return i, err
 }
@@ -244,7 +300,7 @@ SET name           = $2,
     opening_hours  = $7,
     updated_at     = now()
 WHERE id = $1
-RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at
+RETURNING id, ward_id, name, address, latitude, longitude, is_gf_oriented, opening_hours, status, rejection_reason, approved_at, created_at, updated_at, cuisine, price_level, rating, review_count, nearest_station, blurb, gf_status, photo_url
 `
 
 type UpdateStoreProfileParams struct {
@@ -282,6 +338,14 @@ func (q *Queries) UpdateStoreProfile(ctx context.Context, arg UpdateStoreProfile
 		&i.ApprovedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Cuisine,
+		&i.PriceLevel,
+		&i.Rating,
+		&i.ReviewCount,
+		&i.NearestStation,
+		&i.Blurb,
+		&i.GfStatus,
+		&i.PhotoUrl,
 	)
 	return i, err
 }

@@ -35,14 +35,23 @@ type wardRef struct {
 	NameEn string `json:"name_en"`
 }
 
-// storeCard is one row in the browse list. Paid-only fields are pointers and
-// omitted for free-tier users (design: the free list returns name + ward only).
+// storeCard is one row in the browse list. The Gurufuri design shows rich cards
+// for every authenticated user; the paywall is on the menu (402), not the list
+// or detail (see open-thread #10).
 type storeCard struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Ward         wardRef   `json:"ward"`
-	IsGfOriented *bool     `json:"is_gf_oriented,omitempty"`
-	Address      *string   `json:"address,omitempty"`
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	Ward           wardRef   `json:"ward"`
+	IsGfOriented   bool      `json:"is_gf_oriented"`
+	GfStatus       string    `json:"gf_status"`
+	Cuisine        string    `json:"cuisine"`
+	PriceLevel     int32     `json:"price_level"`
+	Rating         float32   `json:"rating"`
+	ReviewCount    int32     `json:"review_count"`
+	NearestStation string    `json:"nearest_station"`
+	Blurb          string    `json:"blurb"`
+	Address        string    `json:"address"`
+	PhotoURL       *string   `json:"photo_url"`
 }
 
 type listStoresResponse struct {
@@ -100,19 +109,25 @@ func (server *Server) listStores(ctx *gin.Context) {
 		rows = rows[:storesPageLimit]
 	}
 
-	paid := isPaidUser(user)
 	cards := make([]storeCard, len(rows))
 	for i, r := range rows {
 		card := storeCard{
-			ID:   r.ID,
-			Name: r.Name,
-			Ward: wardRef{ID: r.WardID, NameJa: r.WardNameJa, NameEn: r.WardNameEn},
+			ID:             r.ID,
+			Name:           r.Name,
+			Ward:           wardRef{ID: r.WardID, NameJa: r.WardNameJa, NameEn: r.WardNameEn},
+			IsGfOriented:   r.IsGfOriented,
+			GfStatus:       string(r.GfStatus),
+			Cuisine:        r.Cuisine,
+			PriceLevel:     r.PriceLevel,
+			Rating:         r.Rating,
+			ReviewCount:    r.ReviewCount,
+			NearestStation: r.NearestStation,
+			Blurb:          r.Blurb,
+			Address:        r.Address,
 		}
-		if paid {
-			gf := r.IsGfOriented
-			addr := r.Address
-			card.IsGfOriented = &gf
-			card.Address = &addr
+		if r.PhotoUrl.Valid {
+			u := r.PhotoUrl.String
+			card.PhotoURL = &u
 		}
 		cards[i] = card
 	}
