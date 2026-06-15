@@ -65,7 +65,9 @@ func NewServer(config util.Config, store db.Repository) (*Server, error) {
 func (server *Server) setupRouter() {
 	router := gin.Default()
 
-	router.GET("/healthz", func(ctx *gin.Context) {
+	// /health, not /healthz: Google's Cloud Run edge reserves /healthz and
+	// returns its own 404 without forwarding to the container.
+	router.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 

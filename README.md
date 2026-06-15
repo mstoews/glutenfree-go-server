@@ -43,7 +43,7 @@ make server                     # run on :8080
 
 | Method | Path                  | Auth | Notes                                  |
 |--------|-----------------------|------|----------------------------------------|
-| GET    | /healthz              | no   | liveness                               |
+| GET    | /health               | no   | liveness                               |
 | POST   | /auth/register        | no   | email + password (bcrypt)              |
 | POST   | /auth/login           | no   | returns access + refresh tokens        |
 | POST   | /auth/refresh         | no   | exchange refresh token for new access  |

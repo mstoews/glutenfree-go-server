@@ -1,6 +1,7 @@
 package util
 
 import (
+	"os"
 	"time"
 
 	"github.com/spf13/viper"
@@ -54,6 +55,19 @@ func LoadConfig(path string) (config Config, err error) {
 		err = nil
 	}
 
-	err = viper.Unmarshal(&config)
+	if err = viper.Unmarshal(&config); err != nil {
+		return
+	}
+
+	// Serverless platforms (Cloud Run, etc.) inject PORT and require the
+	// container to listen on it. Honor PORT when HTTP_SERVER_ADDRESS is unset,
+	// defaulting to :8080.
+	if config.HTTPServerAddress == "" {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
+		config.HTTPServerAddress = "0.0.0.0:" + port
+	}
 	return
 }

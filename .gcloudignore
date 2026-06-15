@@ -1,0 +1,9 @@
+# Controls what `gcloud run deploy --source` uploads to Cloud Build.
+# IMPORTANT: keep app.env out of the build context (it holds secrets).
+app.env
+bin/
+.git/
+.gitignore
+.dockerignore
+.gcloudignore
+*.md

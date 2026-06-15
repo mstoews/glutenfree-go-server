@@ -25,6 +25,18 @@ createdb:
 dropdb:
 	docker exec -it glutenfree-pg dropdb glutenfree
 
+# Deploy to Cloud Run from source (uses the Dockerfile). Secrets come from
+# Secret Manager (db-source, token-symmetric-key); HTTP_SERVER_ADDRESS is left
+# unset so the app honors Cloud Run's injected PORT (8080). app.env is excluded
+# from the upload by .gcloudignore.
+deploy:
+	gcloud run deploy glutenfree-go-server --source . \
+		--region asia-east1 --platform managed \
+		--allow-unauthenticated \
+		--min-instances=0 \
+		--set-secrets=DB_SOURCE=db-source:latest,TOKEN_SYMMETRIC_KEY=token-symmetric-key:latest \
+		--set-env-vars="ENVIRONMENT=production,ACCESS_TOKEN_DURATION=15m,REFRESH_TOKEN_DURATION=720h,ALLOWED_ORIGINS=*,APPLE_BUNDLE_ID=com.glutenfree.app"
+
 migrateup:
 	migrate -path db/migration -database "$(DB_URL)" -verbose up
 
