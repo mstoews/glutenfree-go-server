@@ -101,6 +101,18 @@ type adminStoreResponse struct {
 	IsGfOriented    bool          `json:"is_gf_oriented"`
 	OpeningHours    []openingHour `json:"opening_hours"`
 	Status          string        `json:"status"`
+	Cuisine         string        `json:"cuisine"`
+	PriceLevel      int32         `json:"price_level"`
+	Rating          float32       `json:"rating"`
+	ReviewCount     int32         `json:"review_count"`
+	NearestStation  string        `json:"nearest_station"`
+	Blurb           string        `json:"blurb"`
+	GfStatus        string        `json:"gf_status"`
+	PhotoURL        *string       `json:"photo_url"`
+	NameEn          string        `json:"name_en"`
+	Phone           string        `json:"phone"`
+	SourceURL       string        `json:"source_url"`
+	Notes           string        `json:"notes"`
 	RejectionReason *string       `json:"rejection_reason"`
 	ApprovedAt      *time.Time    `json:"approved_at"`
 }
@@ -111,15 +123,30 @@ func newAdminStoreResponse(s db.Store) (adminStoreResponse, error) {
 		return adminStoreResponse{}, err
 	}
 	resp := adminStoreResponse{
-		ID:           s.ID,
-		WardID:       s.WardID,
-		Name:         s.Name,
-		Address:      s.Address,
-		Latitude:     s.Latitude,
-		Longitude:    s.Longitude,
-		IsGfOriented: s.IsGfOriented,
-		OpeningHours: hours,
-		Status:       string(s.Status),
+		ID:             s.ID,
+		WardID:         s.WardID,
+		Name:           s.Name,
+		Address:        s.Address,
+		Latitude:       s.Latitude,
+		Longitude:      s.Longitude,
+		IsGfOriented:   s.IsGfOriented,
+		OpeningHours:   hours,
+		Status:         string(s.Status),
+		Cuisine:        s.Cuisine,
+		PriceLevel:     s.PriceLevel,
+		Rating:         s.Rating,
+		ReviewCount:    s.ReviewCount,
+		NearestStation: s.NearestStation,
+		Blurb:          s.Blurb,
+		GfStatus:       string(s.GfStatus),
+		NameEn:         s.NameEn,
+		Phone:          s.Phone,
+		SourceURL:      s.SourceUrl,
+		Notes:          s.Notes,
+	}
+	if s.PhotoUrl.Valid {
+		u := s.PhotoUrl.String
+		resp.PhotoURL = &u
 	}
 	if s.RejectionReason.Valid {
 		r := s.RejectionReason.String
@@ -151,12 +178,18 @@ func (server *Server) adminGetStore(ctx *gin.Context) {
 }
 
 type updateStoreRequest struct {
-	Name         string        `json:"name" binding:"required"`
-	Address      string        `json:"address" binding:"required"`
-	Latitude     float64       `json:"latitude"`
-	Longitude    float64       `json:"longitude"`
-	IsGfOriented bool          `json:"is_gf_oriented"`
-	OpeningHours []openingHour `json:"opening_hours"`
+	Name           string        `json:"name" binding:"required"`
+	Address        string        `json:"address" binding:"required"`
+	Latitude       float64       `json:"latitude"`
+	Longitude      float64       `json:"longitude"`
+	IsGfOriented   bool          `json:"is_gf_oriented"`
+	OpeningHours   []openingHour `json:"opening_hours"`
+	Cuisine        string        `json:"cuisine"`
+	PriceLevel     int32         `json:"price_level" binding:"omitempty,min=1,max=3"`
+	NearestStation string        `json:"nearest_station"`
+	Blurb          string        `json:"blurb"`
+	GfStatus       string        `json:"gf_status" binding:"omitempty,oneof=certified on_request contains_hidden_gluten"`
+	PhotoURL       string        `json:"photo_url"`
 }
 
 // adminUpdateStore edits the store profile. Edits to an already-approved store
@@ -184,14 +217,31 @@ func (server *Server) adminUpdateStore(ctx *gin.Context) {
 		hoursJSON = b
 	}
 
+	// PUT overwrites, so fall back to column defaults when a partner omits the
+	// non-null display fields rather than writing 0 / an empty enum.
+	priceLevel := req.PriceLevel
+	if priceLevel == 0 {
+		priceLevel = 2
+	}
+	gfStatus := req.GfStatus
+	if gfStatus == "" {
+		gfStatus = "on_request"
+	}
+
 	s, err := server.store.UpdateStoreProfile(ctx, db.UpdateStoreProfileParams{
-		ID:           storeID,
-		Name:         req.Name,
-		Address:      req.Address,
-		Latitude:     req.Latitude,
-		Longitude:    req.Longitude,
-		IsGfOriented: req.IsGfOriented,
-		OpeningHours: hoursJSON,
+		ID:             storeID,
+		Name:           req.Name,
+		Address:        req.Address,
+		Latitude:       req.Latitude,
+		Longitude:      req.Longitude,
+		IsGfOriented:   req.IsGfOriented,
+		OpeningHours:   hoursJSON,
+		Cuisine:        req.Cuisine,
+		PriceLevel:     priceLevel,
+		NearestStation: req.NearestStation,
+		Blurb:          req.Blurb,
+		GfStatus:       db.GfStatus(gfStatus),
+		PhotoUrl:       textOrNull(req.PhotoURL),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

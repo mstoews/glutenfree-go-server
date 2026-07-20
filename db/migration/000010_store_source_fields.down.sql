@@ -1,0 +1,5 @@
+ALTER TABLE stores
+    DROP COLUMN IF EXISTS name_en,
+    DROP COLUMN IF EXISTS phone,
+    DROP COLUMN IF EXISTS source_url,
+    DROP COLUMN IF EXISTS notes;

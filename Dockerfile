@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # ---- build stage ----
-FROM golang:1.22-alpine AS build
+# Must be >= the `go` directive in go.mod, or `go mod download` fails with
+# GOTOOLCHAIN=local. Bump both together.
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Cache module downloads.

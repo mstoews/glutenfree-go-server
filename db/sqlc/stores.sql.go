@@ -13,7 +13,7 @@ import (
 )
 
 const getApprovedStore = `-- name: GetApprovedStore :one
-SELECT s.id, s.ward_id, s.name, s.address, s.latitude, s.longitude, s.is_gf_oriented, s.opening_hours, s.status, s.rejection_reason, s.approved_at, s.created_at, s.updated_at, s.cuisine, s.price_level, s.rating, s.review_count, s.nearest_station, s.blurb, s.gf_status, s.photo_url, w.name_ja AS ward_name_ja, w.name_en AS ward_name_en
+SELECT s.id, s.ward_id, s.name, s.address, s.latitude, s.longitude, s.is_gf_oriented, s.opening_hours, s.status, s.rejection_reason, s.approved_at, s.created_at, s.updated_at, s.cuisine, s.price_level, s.rating, s.review_count, s.nearest_station, s.blurb, s.gf_status, s.photo_url, s.name_en, s.phone, s.source_url, s.notes, w.name_ja AS ward_name_ja, w.name_en AS ward_name_en
 FROM stores s
 JOIN wards w ON w.id = s.ward_id
 WHERE s.id = $1 AND s.status = 'approved'
@@ -41,6 +41,10 @@ type GetApprovedStoreRow struct {
 	Blurb           string             `json:"blurb"`
 	GfStatus        GfStatus           `json:"gf_status"`
 	PhotoUrl        pgtype.Text        `json:"photo_url"`
+	NameEn          string             `json:"name_en"`
+	Phone           string             `json:"phone"`
+	SourceUrl       string             `json:"source_url"`
+	Notes           string             `json:"notes"`
 	WardNameJa      string             `json:"ward_name_ja"`
 	WardNameEn      string             `json:"ward_name_en"`
 }
@@ -70,6 +74,10 @@ func (q *Queries) GetApprovedStore(ctx context.Context, id uuid.UUID) (GetApprov
 		&i.Blurb,
 		&i.GfStatus,
 		&i.PhotoUrl,
+		&i.NameEn,
+		&i.Phone,
+		&i.SourceUrl,
+		&i.Notes,
 		&i.WardNameJa,
 		&i.WardNameEn,
 	)
@@ -77,7 +85,7 @@ func (q *Queries) GetApprovedStore(ctx context.Context, id uuid.UUID) (GetApprov
 }
 
 const listApprovedStores = `-- name: ListApprovedStores :many
-SELECT s.id, s.ward_id, s.name, s.address, s.latitude, s.longitude, s.is_gf_oriented, s.opening_hours, s.status, s.rejection_reason, s.approved_at, s.created_at, s.updated_at, s.cuisine, s.price_level, s.rating, s.review_count, s.nearest_station, s.blurb, s.gf_status, s.photo_url, w.name_ja AS ward_name_ja, w.name_en AS ward_name_en
+SELECT s.id, s.ward_id, s.name, s.address, s.latitude, s.longitude, s.is_gf_oriented, s.opening_hours, s.status, s.rejection_reason, s.approved_at, s.created_at, s.updated_at, s.cuisine, s.price_level, s.rating, s.review_count, s.nearest_station, s.blurb, s.gf_status, s.photo_url, s.name_en, s.phone, s.source_url, s.notes, w.name_ja AS ward_name_ja, w.name_en AS ward_name_en
 FROM stores s
 JOIN wards w ON w.id = s.ward_id
 WHERE s.status = 'approved'
@@ -115,6 +123,10 @@ type ListApprovedStoresRow struct {
 	Blurb           string             `json:"blurb"`
 	GfStatus        GfStatus           `json:"gf_status"`
 	PhotoUrl        pgtype.Text        `json:"photo_url"`
+	NameEn          string             `json:"name_en"`
+	Phone           string             `json:"phone"`
+	SourceUrl       string             `json:"source_url"`
+	Notes           string             `json:"notes"`
 	WardNameJa      string             `json:"ward_name_ja"`
 	WardNameEn      string             `json:"ward_name_en"`
 }
@@ -153,6 +165,10 @@ func (q *Queries) ListApprovedStores(ctx context.Context, arg ListApprovedStores
 			&i.Blurb,
 			&i.GfStatus,
 			&i.PhotoUrl,
+			&i.NameEn,
+			&i.Phone,
+			&i.SourceUrl,
+			&i.Notes,
 			&i.WardNameJa,
 			&i.WardNameEn,
 		); err != nil {

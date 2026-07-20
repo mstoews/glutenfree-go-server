@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,7 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/mstoews/glutenfree-server/applesignin"
 	"github.com/mstoews/glutenfree-server/appstore"
+	"github.com/mstoews/glutenfree-server/blobstore"
 	db "github.com/mstoews/glutenfree-server/db/sqlc"
+	"github.com/mstoews/glutenfree-server/geocode"
+	"github.com/mstoews/glutenfree-server/mailer"
 	"github.com/mstoews/glutenfree-server/token"
 	"github.com/mstoews/glutenfree-server/util"
 	"github.com/rs/zerolog/log"
@@ -22,6 +26,9 @@ type Server struct {
 	tokenMaker token.Maker
 	appstore   *appstore.Verifier    // nil when StoreKit verification is not configured
 	apple      *applesignin.Verifier // nil when Sign in with Apple is not configured
+	geocoder   geocode.Geocoder
+	uploader   blobstore.Uploader // nil when IMAGE_BUCKET is unset
+	mailer     mailer.Sender      // noop sender when RESEND_API_KEY is unset
 	router     *gin.Engine
 }
 
@@ -36,6 +43,9 @@ func NewServer(config util.Config, store db.Repository) (*Server, error) {
 		config:     config,
 		store:      store,
 		tokenMaker: maker,
+		// GSI needs no API key or billing; swap for a paid provider by
+		// assigning a different geocode.Geocoder here.
+		geocoder: geocode.NewGSI(),
 	}
 
 	// StoreKit verification is optional: without a configured Apple root CA the
@@ -48,6 +58,28 @@ func NewServer(config util.Config, store db.Repository) (*Server, error) {
 		server.appstore = verifier
 	} else {
 		log.Warn().Msg("APPLE_ROOT_CA_PATH not set; /subscription/verify and /webhooks/apple are disabled")
+	}
+
+	// Image uploads are optional: without a bucket, /internal/uploads/image
+	// returns 501 rather than failing startup.
+	if config.ImageBucket != "" {
+		uploader, err := blobstore.NewGCS(context.Background(), config.ImageBucket)
+		if err != nil {
+			return nil, fmt.Errorf("cannot create image uploader: %w", err)
+		}
+		server.uploader = uploader
+	} else {
+		log.Warn().Msg("IMAGE_BUCKET not set; /internal/uploads/image is disabled")
+	}
+
+	// Transactional mail is optional: without an API key the operator
+	// forgot-password route returns 501 and reset links are logged instead, so
+	// the admin-to-admin reset path still works.
+	if config.ResendAPIKey != "" && config.MailFrom != "" {
+		server.mailer = mailer.NewResend(config.ResendAPIKey, config.MailFrom, config.MailFromName)
+	} else {
+		server.mailer = mailer.NewNoop()
+		log.Warn().Msg("RESEND_API_KEY/MAIL_FROM not set; /internal/auth/forgot-password is disabled")
 	}
 
 	// Sign in with Apple is optional: the bundle id is the identity token's
@@ -64,6 +96,9 @@ func NewServer(config util.Config, store db.Repository) (*Server, error) {
 
 func (server *Server) setupRouter() {
 	router := gin.Default()
+
+	// CORS for the browser admin portal (gurufuri-admin) and web clients.
+	router.Use(corsMiddleware(server.config.AllowedOrigins))
 
 	// /health, not /healthz: Google's Cloud Run edge reserves /healthz and
 	// returns its own 404 without forwarding to the container.
@@ -101,9 +136,31 @@ func (server *Server) setupRouter() {
 
 	// Internal ops (/internal/*): review queue + onboarding.
 	router.POST("/internal/auth/login", server.internalLogin)
+	router.POST("/internal/auth/refresh", server.renewInternalAccessToken)
+	router.POST("/internal/auth/logout", server.internalLogout)
+	// Password reset by emailed link: public by necessity — the operator
+	// requesting it cannot sign in.
+	router.POST("/internal/auth/forgot-password", server.forgotInternalPassword)
+	router.POST("/internal/auth/reset-password", server.resetInternalPassword)
 	internalGrp := router.Group("/internal").Use(authMiddleware(server.tokenMaker), requireRole(token.RoleInternal))
+	internalGrp.POST("/auth/change-password", server.changeInternalPassword)
+	internalGrp.GET("/admins", server.listInternalAdmins)
+	internalGrp.POST("/admins", server.createInternalAdmin)
+	internalGrp.PUT("/admins/:id/password", server.setInternalAdminPassword)
 	internalGrp.POST("/store-admins", server.provisionStoreAdmin)
 	internalGrp.GET("/stores", server.internalListStores)
+	internalGrp.POST("/stores", server.internalCreateStore)
+	internalGrp.POST("/stores/import", server.internalImportStores)
+	internalGrp.POST("/stores/geocode", server.internalGeocodeStores)
+	internalGrp.POST("/geocode", server.internalGeocodeAddress)
+	internalGrp.POST("/uploads/image", server.internalUploadImage)
+	internalGrp.GET("/stores/:id", server.internalGetStore)
+	internalGrp.PUT("/stores/:id", server.internalUpdateStore)
+	internalGrp.DELETE("/stores/:id", server.internalDeleteStore)
+	internalGrp.GET("/stores/:id/menu", server.internalListMenu)
+	internalGrp.POST("/stores/:id/menu", server.internalCreateMenu)
+	internalGrp.PUT("/stores/:id/menu/:item_id", server.internalUpdateMenu)
+	internalGrp.DELETE("/stores/:id/menu/:item_id", server.internalDeleteMenu)
 	internalGrp.POST("/stores/:id/approve", server.approveStore)
 	internalGrp.POST("/stores/:id/reject", server.rejectStore)
 
