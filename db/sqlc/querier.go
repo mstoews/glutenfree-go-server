@@ -12,16 +12,46 @@ import (
 )
 
 type Querier interface {
+	// Approves from 'draft' as well as 'pending': operator-imported restaurants land
+	// as drafts and never pass through the partner submit flow, so requiring
+	// 'pending' would mean editing each one just to publish it.
 	ApproveStore(ctx context.Context, id uuid.UUID) (Store, error)
+	// Dedup helper for imports: is there already a store with this name in the ward?
+	// Makes re-running an import (or the future scraper) idempotent.
+	CountStoresByNameWard(ctx context.Context, arg CountStoresByNameWardParams) (int64, error)
 	CreateInternalAdmin(ctx context.Context, arg CreateInternalAdminParams) (InternalAdmin, error)
+	// ---- password resets ----
+	CreateInternalPasswordReset(ctx context.Context, arg CreateInternalPasswordResetParams) (InternalPasswordReset, error)
+	CreateInternalSession(ctx context.Context, arg CreateInternalSessionParams) (InternalSession, error)
 	CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStore(ctx context.Context, arg CreateStoreParams) (Store, error)
 	CreateStoreAdmin(ctx context.Context, arg CreateStoreAdminParams) (StoreAdmin, error)
+	// Internal-operator store CRUD (/internal/stores). Unlike the store-admin
+	// self-serve queries in admin_stores.sql, these let an operator write every
+	// column on any store -- including the curated display fields (rating,
+	// review_count) and an explicit status -- so back-office staff can seed and
+	// correct restaurant entries directly.
+	// Operator create: populate every field, including an explicit status (e.g.
+	// seed a fully-curated store straight to 'approved').
+	CreateStoreFull(ctx context.Context, arg CreateStoreFullParams) (Store, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Invalidate any outstanding reset links, e.g. after a successful password change.
+	DeleteInternalPasswordResetsForAdmin(ctx context.Context, adminID uuid.UUID) (int64, error)
+	// Revoke a single refresh session (logout).
+	DeleteInternalSession(ctx context.Context, id uuid.UUID) (int64, error)
+	// Revoke every refresh session for an admin, used after a password change or
+	// reset so sessions opened with the old password cannot be renewed.
+	DeleteInternalSessionsForAdmin(ctx context.Context, adminID uuid.UUID) (int64, error)
 	DeleteMenuItem(ctx context.Context, arg DeleteMenuItemParams) (int64, error)
+	// Hard delete. menu_items and store_admins cascade via their FK ON DELETE
+	// CASCADE, so this removes the store and everything hanging off it.
+	DeleteStore(ctx context.Context, id uuid.UUID) (int64, error)
 	GetApprovedStore(ctx context.Context, id uuid.UUID) (GetApprovedStoreRow, error)
 	GetInternalAdminByEmail(ctx context.Context, lower string) (InternalAdmin, error)
+	GetInternalAdminByID(ctx context.Context, id uuid.UUID) (InternalAdmin, error)
+	GetInternalPasswordResetByTokenHash(ctx context.Context, tokenHash string) (InternalPasswordReset, error)
+	GetInternalSession(ctx context.Context, id uuid.UUID) (InternalSession, error)
 	GetReceiptByOriginalTxID(ctx context.Context, originalTxID string) (SubscriptionReceipt, error)
 	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 	GetStoreAdminByEmail(ctx context.Context, lower string) (StoreAdmin, error)
@@ -36,13 +66,29 @@ type Querier interface {
 	// so `id > @cursor` returns from the start. Optional ward filter via @ward_id.
 	ListApprovedStores(ctx context.Context, arg ListApprovedStoresParams) ([]ListApprovedStoresRow, error)
 	ListAvailableMenuItems(ctx context.Context, storeID uuid.UUID) ([]MenuItem, error)
+	ListInternalAdmins(ctx context.Context) ([]InternalAdmin, error)
 	ListMenuItemsByStore(ctx context.Context, storeID uuid.UUID) ([]MenuItem, error)
 	ListStoresByStatus(ctx context.Context, status StoreStatus) ([]ListStoresByStatusRow, error)
+	// Geocode backfill queue: stores with an address but no coordinates yet
+	// (imports land at 0,0 because the CSV carries no lat/lng).
+	ListStoresMissingCoords(ctx context.Context, limit int32) ([]Store, error)
 	ListWards(ctx context.Context) ([]Ward, error)
+	// Single-use: the WHERE guard makes a concurrent second redemption a no-op
+	// (0 rows affected), so the handler can detect and reject it.
+	MarkInternalPasswordResetUsed(ctx context.Context, id uuid.UUID) (int64, error)
 	RejectStore(ctx context.Context, arg RejectStoreParams) (Store, error)
 	// First submit or resubmit after rejection -> back to the review queue.
 	SubmitStore(ctx context.Context, id uuid.UUID) (Store, error)
+	UpdateInternalAdminPassword(ctx context.Context, arg UpdateInternalAdminPasswordParams) (InternalAdmin, error)
 	UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error)
+	UpdateStoreCoords(ctx context.Context, arg UpdateStoreCoordsParams) (int64, error)
+	// Operator edit: overwrite every editable field on any store, regardless of
+	// its current status. status is passed explicitly so operators can move a
+	// store between states as part of an edit.
+	UpdateStoreFull(ctx context.Context, arg UpdateStoreFullParams) (Store, error)
+	// Store-admin self-serve edit. Covers the presentational fields a partner owns
+	// (cuisine, price_level, nearest_station, blurb, gf_status, photo_url) but NOT
+	// rating/review_count, which are system-curated -- use UpdateStoreFull for those.
 	UpdateStoreProfile(ctx context.Context, arg UpdateStoreProfileParams) (Store, error)
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (User, error)
 	// One row per original transaction. Both /subscription/verify and the Apple

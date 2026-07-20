@@ -234,6 +234,28 @@ type InternalAdmin struct {
 	Email        string             `json:"email"`
 	PasswordHash string             `json:"password_hash"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Name         string             `json:"name"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type InternalPasswordReset struct {
+	ID        uuid.UUID          `json:"id"`
+	AdminID   uuid.UUID          `json:"admin_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type InternalSession struct {
+	ID           uuid.UUID          `json:"id"`
+	AdminID      uuid.UUID          `json:"admin_id"`
+	RefreshToken string             `json:"refresh_token"`
+	UserAgent    string             `json:"user_agent"`
+	ClientIp     string             `json:"client_ip"`
+	IsBlocked    bool               `json:"is_blocked"`
+	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type MenuItem struct {
@@ -283,6 +305,10 @@ type Store struct {
 	Blurb           string             `json:"blurb"`
 	GfStatus        GfStatus           `json:"gf_status"`
 	PhotoUrl        pgtype.Text        `json:"photo_url"`
+	NameEn          string             `json:"name_en"`
+	Phone           string             `json:"phone"`
+	SourceUrl       string             `json:"source_url"`
+	Notes           string             `json:"notes"`
 }
 
 type StoreAdmin struct {

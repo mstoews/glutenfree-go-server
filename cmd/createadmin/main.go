@@ -21,6 +21,7 @@ import (
 func main() {
 	email := flag.String("email", "", "internal admin email")
 	password := flag.String("password", "", "internal admin password")
+	name := flag.String("name", "", "internal admin display name (optional)")
 	dbsource := flag.String("dbsource", "", "override DB_SOURCE (otherwise read from app.env)")
 	flag.Parse()
 
@@ -29,13 +30,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := run(*email, *password, *dbsource); err != nil {
+	if err := run(*email, *password, *name, *dbsource); err != nil {
 		fmt.Fprintln(os.Stderr, "createadmin:", err)
 		os.Exit(1)
 	}
 }
 
-func run(email, password, dbsource string) error {
+func run(email, password, name, dbsource string) error {
 	source := dbsource
 	if source == "" {
 		config, err := util.LoadConfig(".")
@@ -60,6 +61,7 @@ func run(email, password, dbsource string) error {
 	admin, err := db.NewStore(pool).CreateInternalAdmin(ctx, db.CreateInternalAdminParams{
 		Email:        email,
 		PasswordHash: hash,
+		Name:         name,
 	})
 	if err != nil {
 		return err

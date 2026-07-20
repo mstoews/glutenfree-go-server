@@ -7,33 +7,80 @@ package db
 
 import (
 	"context"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createInternalAdmin = `-- name: CreateInternalAdmin :one
-INSERT INTO internal_admins (email, password_hash)
-VALUES ($1, $2)
-RETURNING id, email, password_hash, created_at
+INSERT INTO internal_admins (email, password_hash, name)
+VALUES ($1, $2, $3)
+RETURNING id, email, password_hash, created_at, name, updated_at
 `
 
 type CreateInternalAdminParams struct {
 	Email        string `json:"email"`
 	PasswordHash string `json:"password_hash"`
+	Name         string `json:"name"`
 }
 
 func (q *Queries) CreateInternalAdmin(ctx context.Context, arg CreateInternalAdminParams) (InternalAdmin, error) {
-	row := q.db.QueryRow(ctx, createInternalAdmin, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createInternalAdmin, arg.Email, arg.PasswordHash, arg.Name)
 	var i InternalAdmin
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.Name,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const createInternalPasswordReset = `-- name: CreateInternalPasswordReset :one
+
+INSERT INTO internal_password_resets (admin_id, token_hash, expires_at)
+VALUES ($1, $2, $3)
+RETURNING id, admin_id, token_hash, expires_at, used_at, created_at
+`
+
+type CreateInternalPasswordResetParams struct {
+	AdminID   uuid.UUID          `json:"admin_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+// ---- password resets ----
+func (q *Queries) CreateInternalPasswordReset(ctx context.Context, arg CreateInternalPasswordResetParams) (InternalPasswordReset, error) {
+	row := q.db.QueryRow(ctx, createInternalPasswordReset, arg.AdminID, arg.TokenHash, arg.ExpiresAt)
+	var i InternalPasswordReset
+	err := row.Scan(
+		&i.ID,
+		&i.AdminID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteInternalPasswordResetsForAdmin = `-- name: DeleteInternalPasswordResetsForAdmin :execrows
+DELETE FROM internal_password_resets WHERE admin_id = $1
+`
+
+// Invalidate any outstanding reset links, e.g. after a successful password change.
+func (q *Queries) DeleteInternalPasswordResetsForAdmin(ctx context.Context, adminID uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteInternalPasswordResetsForAdmin, adminID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getInternalAdminByEmail = `-- name: GetInternalAdminByEmail :one
-SELECT id, email, password_hash, created_at FROM internal_admins WHERE lower(email) = lower($1)
+SELECT id, email, password_hash, created_at, name, updated_at FROM internal_admins WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) GetInternalAdminByEmail(ctx context.Context, lower string) (InternalAdmin, error) {
@@ -44,6 +91,117 @@ func (q *Queries) GetInternalAdminByEmail(ctx context.Context, lower string) (In
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.Name,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInternalAdminByID = `-- name: GetInternalAdminByID :one
+SELECT id, email, password_hash, created_at, name, updated_at FROM internal_admins WHERE id = $1
+`
+
+func (q *Queries) GetInternalAdminByID(ctx context.Context, id uuid.UUID) (InternalAdmin, error) {
+	row := q.db.QueryRow(ctx, getInternalAdminByID, id)
+	var i InternalAdmin
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.Name,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInternalPasswordResetByTokenHash = `-- name: GetInternalPasswordResetByTokenHash :one
+SELECT id, admin_id, token_hash, expires_at, used_at, created_at FROM internal_password_resets WHERE token_hash = $1
+`
+
+func (q *Queries) GetInternalPasswordResetByTokenHash(ctx context.Context, tokenHash string) (InternalPasswordReset, error) {
+	row := q.db.QueryRow(ctx, getInternalPasswordResetByTokenHash, tokenHash)
+	var i InternalPasswordReset
+	err := row.Scan(
+		&i.ID,
+		&i.AdminID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listInternalAdmins = `-- name: ListInternalAdmins :many
+SELECT id, email, password_hash, created_at, name, updated_at FROM internal_admins ORDER BY lower(email)
+`
+
+func (q *Queries) ListInternalAdmins(ctx context.Context) ([]InternalAdmin, error) {
+	rows, err := q.db.Query(ctx, listInternalAdmins)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []InternalAdmin{}
+	for rows.Next() {
+		var i InternalAdmin
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.CreatedAt,
+			&i.Name,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markInternalPasswordResetUsed = `-- name: MarkInternalPasswordResetUsed :execrows
+UPDATE internal_password_resets
+SET used_at = now()
+WHERE id = $1 AND used_at IS NULL
+`
+
+// Single-use: the WHERE guard makes a concurrent second redemption a no-op
+// (0 rows affected), so the handler can detect and reject it.
+func (q *Queries) MarkInternalPasswordResetUsed(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markInternalPasswordResetUsed, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateInternalAdminPassword = `-- name: UpdateInternalAdminPassword :one
+UPDATE internal_admins
+SET password_hash = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, created_at, name, updated_at
+`
+
+type UpdateInternalAdminPasswordParams struct {
+	ID           uuid.UUID `json:"id"`
+	PasswordHash string    `json:"password_hash"`
+}
+
+func (q *Queries) UpdateInternalAdminPassword(ctx context.Context, arg UpdateInternalAdminPasswordParams) (InternalAdmin, error) {
+	row := q.db.QueryRow(ctx, updateInternalAdminPassword, arg.ID, arg.PasswordHash)
+	var i InternalAdmin
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.Name,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

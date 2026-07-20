@@ -51,6 +51,43 @@ func authMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
 	}
 }
 
+// corsMiddleware applies CORS for the browser-based admin/web portals. Allowed
+// origins come from config.AllowedOrigins; a single "*" allows any origin.
+// Auth is via Bearer token (not cookies), so wildcard origins are safe here.
+func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
+	allowAny := false
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			allowAny = true
+		}
+		allowed[o] = true
+	}
+
+	return func(ctx *gin.Context) {
+		origin := ctx.GetHeader("Origin")
+		if origin != "" && (allowAny || allowed[origin]) {
+			if allowAny {
+				ctx.Header("Access-Control-Allow-Origin", "*")
+			} else {
+				ctx.Header("Access-Control-Allow-Origin", origin)
+				ctx.Header("Vary", "Origin")
+			}
+			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			ctx.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			ctx.Header("Access-Control-Max-Age", "3600")
+		}
+
+		// Preflight: answer and stop before routing (the route may only define
+		// GET/POST/etc., not OPTIONS).
+		if ctx.Request.Method == http.MethodOptions {
+			ctx.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		ctx.Next()
+	}
+}
+
 // requireRole aborts with 403 unless the authenticated token carries the given
 // role. Must run after authMiddleware.
 func requireRole(role string) gin.HandlerFunc {

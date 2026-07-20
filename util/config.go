@@ -24,6 +24,27 @@ type Config struct {
 	// AppleBundleID, if set, pins the verified transaction's bundle id.
 	AppleRootCAPath string `mapstructure:"APPLE_ROOT_CA_PATH"`
 	AppleBundleID   string `mapstructure:"APPLE_BUNDLE_ID"`
+
+	// ImageBucket is the GCS bucket for uploaded restaurant/meal photos.
+	// Empty disables /internal/uploads/image (returns 501).
+	ImageBucket string `mapstructure:"IMAGE_BUCKET"`
+
+	// Transactional mail, used only for operator password-reset links. An empty
+	// ResendAPIKey disables delivery: /internal/auth/forgot-password then
+	// returns 501 and reset links are written to the log instead.
+	// MailFrom must be on a domain verified in the Resend account.
+	ResendAPIKey string `mapstructure:"RESEND_API_KEY"`
+	MailFrom     string `mapstructure:"MAIL_FROM"`
+	MailFromName string `mapstructure:"MAIL_FROM_NAME"`
+
+	// AdminPortalURL is the public origin of the gurufuri-admin SPA. It is the
+	// base for emailed reset links, so it must be set for the reset flow to
+	// produce a working URL (e.g. https://gurufuri-admin.web.app).
+	AdminPortalURL string `mapstructure:"ADMIN_PORTAL_URL"`
+
+	// PasswordResetTokenDuration is how long an emailed reset link stays valid.
+	// Defaults to 1h when unset.
+	PasswordResetTokenDuration time.Duration `mapstructure:"PASSWORD_RESET_TOKEN_DURATION"`
 }
 
 // envKeys are bound explicitly so that, in a container with no app.env file,
@@ -32,6 +53,9 @@ var envKeys = []string{
 	"ENVIRONMENT", "DB_SOURCE", "MIGRATION_URL", "HTTP_SERVER_ADDRESS",
 	"TOKEN_SYMMETRIC_KEY", "ACCESS_TOKEN_DURATION", "REFRESH_TOKEN_DURATION",
 	"ALLOWED_ORIGINS", "APPLE_ROOT_CA_PATH", "APPLE_BUNDLE_ID",
+	"IMAGE_BUCKET",
+	"RESEND_API_KEY", "MAIL_FROM", "MAIL_FROM_NAME", "ADMIN_PORTAL_URL",
+	"PASSWORD_RESET_TOKEN_DURATION",
 }
 
 // LoadConfig reads configuration from app.env in the given path, with
@@ -68,6 +92,10 @@ func LoadConfig(path string) (config Config, err error) {
 			port = "8080"
 		}
 		config.HTTPServerAddress = "0.0.0.0:" + port
+	}
+
+	if config.PasswordResetTokenDuration == 0 {
+		config.PasswordResetTokenDuration = time.Hour
 	}
 	return
 }

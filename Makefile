@@ -29,13 +29,24 @@ dropdb:
 # Secret Manager (db-source, token-symmetric-key); HTTP_SERVER_ADDRESS is left
 # unset so the app honors Cloud Run's injected PORT (8080). app.env is excluded
 # from the upload by .gcloudignore.
+# GCP_PROJECT pins the deploy to the project that owns the db-source /
+# token-symmetric-key secrets. Without it, `gcloud run deploy` targets the
+# active gcloud project, which may not have those secrets (a common footgun).
+GCP_PROJECT ?= gurufuri
+
+# Every secret named below must already have a version, or Cloud Run rejects
+# the deploy. Seed a new one with:
+#   printf '%s' '<value>' | gcloud secrets versions add <name> --project $(GCP_PROJECT) --data-file=-
+# MAIL_FROM must be on a domain verified in Resend, and ADMIN_PORTAL_URL is
+# the origin emailed reset links are built from.
 deploy:
 	gcloud run deploy glutenfree-go-server --source . \
+		--project $(GCP_PROJECT) \
 		--region asia-east1 --platform managed \
 		--allow-unauthenticated \
 		--min-instances=0 \
-		--set-secrets=DB_SOURCE=db-source:latest,TOKEN_SYMMETRIC_KEY=token-symmetric-key:latest \
-		--set-env-vars="ENVIRONMENT=production,ACCESS_TOKEN_DURATION=15m,REFRESH_TOKEN_DURATION=720h,ALLOWED_ORIGINS=*,APPLE_BUNDLE_ID=com.glutenfree.app"
+		--set-secrets=DB_SOURCE=db-source:latest,TOKEN_SYMMETRIC_KEY=token-symmetric-key:latest,RESEND_API_KEY=resend-api-key:latest \
+		--set-env-vars="ENVIRONMENT=production,ACCESS_TOKEN_DURATION=15m,REFRESH_TOKEN_DURATION=720h,ALLOWED_ORIGINS=*,APPLE_BUNDLE_ID=com.glutenfree.app,IMAGE_BUCKET=gurufuri-images,MAIL_FROM=no-reply@gurufuri-jp.com,MAIL_FROM_NAME=Gurufuri Admin,ADMIN_PORTAL_URL=https://gurufuri-admin.web.app"
 
 migrateup:
 	migrate -path db/migration -database "$(DB_URL)" -verbose up
@@ -64,4 +75,24 @@ build:
 test:
 	go test -v -cover ./...
 
-.PHONY: postgres createdb dropdb migrateup migrateup1 migratedown migratedown1 new_migration sqlc server build test
+# TEST_DB_URL is the throwaway Postgres used by `test-integration` (own port so
+# it never collides with the :5432 dev container). Override for ad-hoc runs.
+TEST_DB_URL ?= postgresql://root:secret@localhost:5433/glutenfree_test?sslmode=disable
+
+# test-integration spins a disposable Postgres on :5433, migrates it, runs the
+# `integration`-tagged tests (real sqlc queries + FK cascade) against it, then
+# tears the container down whether or not the tests pass. Needs Docker + migrate.
+test-integration:
+	docker rm -f glutenfree-pg-test >/dev/null 2>&1 || true
+	docker run --name glutenfree-pg-test -p 5433:5432 \
+		-e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=glutenfree_test \
+		-d postgres:16-alpine
+	@echo "waiting for postgres to accept connections..."
+	@until docker exec glutenfree-pg-test psql -U root -d glutenfree_test -c 'select 1' >/dev/null 2>&1; do sleep 0.5; done
+	@migrate -path db/migration -database "$(TEST_DB_URL)" up && \
+		TEST_DB_SOURCE="$(TEST_DB_URL)" go test -tags=integration -count=1 -v ./db/... ; \
+		status=$$? ; \
+		docker rm -f glutenfree-pg-test >/dev/null 2>&1 || true ; \
+		exit $$status
+
+.PHONY: postgres createdb dropdb migrateup migrateup1 migratedown migratedown1 new_migration sqlc server build test test-integration
