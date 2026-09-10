@@ -12,6 +12,7 @@ import (
 	"github.com/mstoews/glutenfree-server/appstore"
 	"github.com/mstoews/glutenfree-server/blobstore"
 	db "github.com/mstoews/glutenfree-server/db/sqlc"
+	"github.com/mstoews/glutenfree-server/discovery"
 	"github.com/mstoews/glutenfree-server/geocode"
 	"github.com/mstoews/glutenfree-server/mailer"
 	"github.com/mstoews/glutenfree-server/token"
@@ -21,6 +22,7 @@ import (
 
 // Server serves the GlutenFree HTTP API.
 type Server struct {
+	discovery  discovery.Provider
 	config     util.Config
 	store      db.Repository
 	tokenMaker token.Maker
@@ -41,6 +43,7 @@ func NewServer(config util.Config, store db.Repository) (*Server, error) {
 
 	server := &Server{
 		config:     config,
+		discovery:  discovery.New(config.BraveSearchAPIKey),
 		store:      store,
 		tokenMaker: maker,
 		// GSI needs no API key or billing; swap for a paid provider by
@@ -151,6 +154,7 @@ func (server *Server) setupRouter() {
 	internalGrp.GET("/stores", server.internalListStores)
 	internalGrp.POST("/stores", server.internalCreateStore)
 	internalGrp.POST("/stores/import", server.internalImportStores)
+	internalGrp.POST("/discovery", server.internalDiscover)
 	internalGrp.POST("/stores/geocode", server.internalGeocodeStores)
 	internalGrp.POST("/geocode", server.internalGeocodeAddress)
 	internalGrp.POST("/uploads/image", server.internalUploadImage)

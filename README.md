@@ -52,3 +52,9 @@ make server                     # run on :8080
 Not yet built: Sign in with Apple (`/auth/apple`), StoreKit verify
 (`/subscription/verify`) + Apple webhook, stores/menu endpoints, admin + internal
 ops routes. See design doc + brainz `glutenfree:open-threads`.
+
+## Restaurant discovery
+
+The admin's **Discover and create drafts** action uses `POST /internal/discovery`.
+Set `BRAVE_SEARCH_API_KEY` for automatic web searches, or paste restaurant URLs to
+capture without a search key. See [the workflow and limits](docs/discovery.md).

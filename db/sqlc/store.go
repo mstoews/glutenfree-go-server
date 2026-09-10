@@ -1,6 +1,9 @@
 package db
 
-import "github.com/jackc/pgx/v5/pgxpool"
+import (
+	"context"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
 // Repository provides all functions to execute database queries. Today it is
 // just the sqlc-generated Querier; transactional methods can be added here
@@ -8,6 +11,7 @@ import "github.com/jackc/pgx/v5/pgxpool"
 // `Store` model for the stores table.)
 type Repository interface {
 	Querier
+	CreateDiscoveryDraft(context.Context, CreateStoreFullParams) (Store, bool, error)
 }
 
 // SQLStore implements Repository using a pgx connection pool.
