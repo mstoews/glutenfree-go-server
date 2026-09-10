@@ -191,3 +191,116 @@ func Extract(data []byte, source string) (Candidate, error) {
 	c.Warnings = append(c.Warnings, "Gluten-free evidence is unverified. Check preparation and cross-contact with the restaurant.", "Image URLs are research sources; verify reuse permission before publishing.")
 	return c, nil
 }
+
+// socialHosts never lead to an individual restaurant page, so following them
+// only burns the fetch budget.
+var socialHosts = []string{"facebook.com", "instagram.com", "twitter.com", "x.com", "youtube.com", "tiktok.com", "pinterest.com", "linkedin.com", "line.me", "google.com", "apple.com"}
+var assetExts = []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".css", ".js", ".ico", ".pdf", ".zip", ".mp4"}
+
+func candidateLink(u *url.URL) bool {
+	host := strings.ToLower(u.Hostname())
+	// Aggregators are skipped here too: their entry pages are themselves
+	// listings, and several answer datacenter IPs with HTTP 403.
+	for _, group := range [][]string{aggregators, socialHosts} {
+		for _, d := range group {
+			if host == d || strings.HasSuffix(host, "."+d) {
+				return false
+			}
+		}
+	}
+	path := strings.ToLower(u.Path)
+	for _, ext := range assetExts {
+		if strings.HasSuffix(path, ext) {
+			return false
+		}
+	}
+	return true
+}
+
+// listingURLs pulls entry links out of schema.org listing markup: an ItemList,
+// or repeated business objects carrying their own url.
+func listingURLs(v any) []string {
+	var out []string
+	switch x := v.(type) {
+	case []any:
+		for _, child := range x {
+			out = append(out, listingURLs(child)...)
+		}
+	case map[string]any:
+		for _, typ := range links(x["@type"]) {
+			switch strings.TrimPrefix(typ, "https://schema.org/") {
+			case "Restaurant", "CafeOrCoffeeShop", "Bakery", "FoodEstablishment", "LocalBusiness", "ListItem":
+				if s := stringValue(x["url"]); s != "" {
+					out = append(out, s)
+				} else if id := stringValue(x["@id"]); id != "" {
+					out = append(out, id)
+				}
+			}
+		}
+		for _, key := range []string{"itemListElement", "@graph", "item", "mainEntity"} {
+			if child, ok := x[key]; ok {
+				out = append(out, listingURLs(child)...)
+			}
+		}
+	}
+	return out
+}
+
+// CandidateLinks harvests links to individual restaurant pages from a listing
+// page. Extract deliberately rejects listing pages rather than inventing
+// records from them; this is the other half of that trade — the listing is used
+// only as a source of links, never as a source of facts. Same-host links are
+// kept: directory sites link their listing pages to their own per-restaurant
+// pages, which do carry the markup Extract needs.
+//
+// Only schema.org listing markup is followed. Scanning every anchor instead was
+// measured against live listing pages and returned site navigation — homepages,
+// category and tag indexes, login and contact pages — for every page tried,
+// exhausting the caller's fetch budget before it reached a page that did
+// publish structured data. A listing without that markup is a dead end.
+func CandidateLinks(data []byte, source string, max int) []string {
+	out := []string{}
+	if max <= 0 {
+		return out
+	}
+	base, err := URL(source)
+	if err != nil {
+		return out
+	}
+	doc, err := html.Parse(bytes.NewReader(data))
+	if err != nil {
+		return out
+	}
+	seen := map[string]bool{strings.TrimSuffix(base.String(), "/"): true}
+	walk(doc, func(n *html.Node) {
+		if n.Type != html.ElementNode || n.Data != "script" || !strings.EqualFold(attr(n, "type"), "application/ld+json") || n.FirstChild == nil {
+			return
+		}
+		var v any
+		if json.Unmarshal([]byte(n.FirstChild.Data), &v) != nil {
+			return
+		}
+		for _, raw := range listingURLs(v) {
+			if len(out) >= max || strings.TrimSpace(raw) == "" {
+				return
+			}
+			u, err := url.Parse(strings.TrimSpace(raw))
+			if err != nil {
+				continue
+			}
+			u = base.ResolveReference(u)
+			u.Fragment = ""
+			v, err := URL(u.String())
+			if err != nil || !candidateLink(v) {
+				continue
+			}
+			key := strings.TrimSuffix(v.String(), "/")
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, v.String())
+		}
+	})
+	return out
+}

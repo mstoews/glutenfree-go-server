@@ -86,7 +86,7 @@ func fetch(ctx context.Context, client *http.Client, raw string) ([]byte, string
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/pdf")
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, "", "", errors.New("source could not be fetched")
+		return nil, "", "", fmt.Errorf("source could not be fetched: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {

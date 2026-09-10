@@ -25,7 +25,7 @@ type Candidate struct {
 }
 type Provider interface {
 	Search(context.Context, string, int) ([]string, error)
-	Capture(context.Context, string) (Candidate, error)
+	CaptureOrLinks(context.Context, string, int) (Candidate, []string, error)
 }
 type Service struct {
 	Key    string
@@ -33,6 +33,27 @@ type Service struct {
 }
 
 func New(key string) *Service { return &Service{Key: key, Client: NewClient()} }
+
+// aggregators are directory, listicle and delivery-marketplace domains. Their
+// pages list many businesses at once, so Extract rejects them for not
+// identifying exactly one restaurant, and several answer datacenter IPs with
+// HTTP 403. Excluding them steers results toward individual restaurant pages,
+// which carry the schema.org/Restaurant markup Extract needs.
+var aggregators = []string{
+	"ubereats.com", "yelp.com", "tripadvisor.com", "tripadvisor.jp",
+	"findmeglutenfree.com", "happycow.net", "wanderlog.com",
+	"tabelog.com", "retty.me", "gnavi.co.jp", "hotpepper.jp",
+}
+
+// SearchQuery builds the web-search query for a ward. keywords is the
+// operator's optional refinement and may be empty.
+func SearchQuery(wardEn, wardJa, keywords string) string {
+	q := strings.Join(strings.Fields(fmt.Sprintf("%s %s Tokyo %s gluten free グルテンフリー restaurant", wardEn, wardJa, keywords)), " ")
+	for _, domain := range aggregators {
+		q += " -site:" + domain
+	}
+	return q
+}
 func (s *Service) Search(ctx context.Context, query string, limit int) ([]string, error) {
 	if s.Key == "" {
 		return nil, errors.New("BRAVE_SEARCH_API_KEY is not configured; paste restaurant URLs instead")
@@ -74,16 +95,25 @@ func (s *Service) Search(ctx context.Context, query string, limit int) ([]string
 	return urls, nil
 }
 func (s *Service) Capture(ctx context.Context, raw string) (Candidate, error) {
+	c, _, err := s.CaptureOrLinks(ctx, raw, 0)
+	return c, err
+}
+
+// CaptureOrLinks captures raw as a single restaurant. When the page turns out to
+// be a listing instead, it returns up to maxLinks candidate links to individual
+// restaurant pages alongside the error, so the caller can follow them rather
+// than discard the page. The listing itself is never turned into a record.
+func (s *Service) CaptureOrLinks(ctx context.Context, raw string, maxLinks int) (Candidate, []string, error) {
 	data, final, kind, err := fetch(ctx, s.Client, raw)
 	if err != nil {
-		return Candidate{}, err
+		return Candidate{}, nil, err
 	}
 	if !strings.Contains(kind, "html") {
-		return Candidate{}, errors.New("restaurant source must be an HTML page")
+		return Candidate{}, nil, errors.New("restaurant source must be an HTML page")
 	}
 	c, err := Extract(data, final)
 	if err != nil {
-		return c, err
+		return c, CandidateLinks(data, final, maxLinks), err
 	}
 	// Follow at most one menu page. PDFs remain links; no fabricated OCR or prices.
 	if len(c.Menus) > 0 {
@@ -96,5 +126,5 @@ func (s *Service) Capture(ctx context.Context, raw string) (Candidate, error) {
 			c.Warnings = append(c.Warnings, "Menu retained as a link; PDF/image text requires manual review")
 		}
 	}
-	return c, nil
+	return c, nil, nil
 }

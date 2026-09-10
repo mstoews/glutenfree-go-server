@@ -39,13 +39,15 @@ GCP_PROJECT ?= gurufuri
 #   printf '%s' '<value>' | gcloud secrets versions add <name> --project $(GCP_PROJECT) --data-file=-
 # MAIL_FROM must be on a domain verified in Resend, and ADMIN_PORTAL_URL is
 # the origin emailed reset links are built from.
+# BRAVE_SEARCH_API_KEY powers automatic restaurant discovery; without it
+# /internal/discovery/run rejects search-only requests (pasted URLs still work).
 deploy:
 	gcloud run deploy glutenfree-go-server --source . \
 		--project $(GCP_PROJECT) \
 		--region asia-east1 --platform managed \
 		--allow-unauthenticated \
 		--min-instances=0 \
-		--set-secrets=DB_SOURCE=db-source:latest,TOKEN_SYMMETRIC_KEY=token-symmetric-key:latest,RESEND_API_KEY=resend-api-key:latest \
+		--set-secrets=DB_SOURCE=db-source:latest,TOKEN_SYMMETRIC_KEY=token-symmetric-key:latest,RESEND_API_KEY=resend-api-key:latest,BRAVE_SEARCH_API_KEY=brave-search-api-key:latest \
 		--set-env-vars="ENVIRONMENT=production,ACCESS_TOKEN_DURATION=15m,REFRESH_TOKEN_DURATION=720h,ALLOWED_ORIGINS=*,APPLE_BUNDLE_ID=com.glutenfree.app,IMAGE_BUCKET=gurufuri-images,MAIL_FROM=no-reply@gurufuri-jp.com,MAIL_FROM_NAME=Gurufuri Admin,ADMIN_PORTAL_URL=https://gurufuri-admin.web.app"
 
 migrateup:
