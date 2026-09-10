@@ -10,6 +10,7 @@ import (
 // Config holds all application configuration. Values are read by viper from
 // app.env (or environment variables, which take precedence).
 type Config struct {
+	BraveSearchAPIKey    string        `mapstructure:"BRAVE_SEARCH_API_KEY"`
 	Environment          string        `mapstructure:"ENVIRONMENT"`
 	DBSource             string        `mapstructure:"DB_SOURCE"`
 	MigrationURL         string        `mapstructure:"MIGRATION_URL"`
@@ -53,7 +54,7 @@ var envKeys = []string{
 	"ENVIRONMENT", "DB_SOURCE", "MIGRATION_URL", "HTTP_SERVER_ADDRESS",
 	"TOKEN_SYMMETRIC_KEY", "ACCESS_TOKEN_DURATION", "REFRESH_TOKEN_DURATION",
 	"ALLOWED_ORIGINS", "APPLE_ROOT_CA_PATH", "APPLE_BUNDLE_ID",
-	"IMAGE_BUCKET",
+	"IMAGE_BUCKET", "BRAVE_SEARCH_API_KEY",
 	"RESEND_API_KEY", "MAIL_FROM", "MAIL_FROM_NAME", "ADMIN_PORTAL_URL",
 	"PASSWORD_RESET_TOKEN_DURATION",
 }

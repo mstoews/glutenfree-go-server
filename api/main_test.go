@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 // function fields. Methods left nil fall through to the embedded (nil) Querier
 // and panic if a handler calls them, so each test wires only what it exercises.
 type fakeStore struct {
-	db.Querier
+	db.Repository
 	createStoreFull         func(context.Context, db.CreateStoreFullParams) (db.Store, error)
 	updateStoreFull         func(context.Context, db.UpdateStoreFullParams) (db.Store, error)
 	deleteStore             func(context.Context, uuid.UUID) (int64, error)
