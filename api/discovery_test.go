@@ -27,11 +27,29 @@ type fakeDiscovery struct{}
 func (fakeDiscovery) Search(context.Context, string, int) ([]string, error) {
 	return []string{"https://example.com"}, nil
 }
-func (fakeDiscovery) Capture(_ context.Context, u string) (discovery.Candidate, error) {
-	if u == "https://fail.example" {
-		return discovery.Candidate{}, errors.New("capture failed")
+
+// listing.example stands in for a directory page: it identifies no single
+// restaurant but links to one. barren.example links only to an out-of-ward
+// restaurant, so its expansion must yield nothing.
+func (fakeDiscovery) CaptureOrLinks(_ context.Context, u string, maxLinks int) (discovery.Candidate, []string, error) {
+	notOne := errors.New("page must identify exactly one restaurant using structured data; capture it manually if unavailable")
+	switch u {
+	case "https://fail.example":
+		return discovery.Candidate{}, nil, errors.New("capture failed")
+	case "https://listing.example":
+		if maxLinks <= 0 {
+			return discovery.Candidate{}, nil, notOne
+		}
+		return discovery.Candidate{}, []string{"https://listed.example"}, notOne
+	case "https://barren.example":
+		if maxLinks <= 0 {
+			return discovery.Candidate{}, nil, notOne
+		}
+		return discovery.Candidate{}, []string{"https://osaka.example"}, notOne
+	case "https://osaka.example":
+		return discovery.Candidate{Name: "Far Cafe", Address: "Osaka 9-9-9", SourceURL: u, Evidence: "GF"}, nil, nil
 	}
-	return discovery.Candidate{Name: "Rice Cafe", Address: "Shibuya 1-2-3", SourceURL: u, Evidence: "GF options", Images: []string{"https://example.com/photo.jpg"}, MenuText: "Rice bread ¥500"}, nil
+	return discovery.Candidate{Name: "Rice Cafe", Address: "Shibuya 1-2-3", SourceURL: u, Evidence: "GF options", Images: []string{"https://example.com/photo.jpg"}, MenuText: "Rice bread ¥500"}, nil, nil
 }
 func TestDiscoveryBatch(t *testing.T) {
 	calls := 0
@@ -76,5 +94,43 @@ func TestDiscoveryValidationAndAuth(t *testing.T) {
 		if rec.Code != tc.status {
 			t.Errorf("got %d want %d: %s", rec.Code, tc.status, rec.Body)
 		}
+	}
+}
+
+func TestDiscoveryFollowsListingLinks(t *testing.T) {
+	saved := []db.CreateStoreFullParams{}
+	repo := &discoveryRepo{fakeStore: &fakeStore{listWards: func(context.Context) ([]db.Ward, error) {
+		return []db.Ward{{ID: 1, NameEn: "Shibuya", NameJa: "渋谷区"}}, nil
+	}}, save: func(_ context.Context, p db.CreateStoreFullParams) (db.Store, bool, error) {
+		saved = append(saved, p)
+		return db.Store{ID: uuid.New()}, true, nil
+	}}
+	s := newTestServer(t, repo)
+	s.discovery = fakeDiscovery{}
+
+	// A listing page yields no record itself, but its linked restaurant does.
+	body := map[string]any{"ward_id": 1, "urls": []string{"https://listing.example"}}
+	rec := serveJSON(t, s, http.MethodPost, "/internal/discovery", authHeader(t, s, token.RoleInternal, nil), body)
+	if rec.Code != 200 || len(saved) != 1 || saved[0].Name != "Rice Cafe" {
+		t.Fatalf("listing not expanded: %d %s saved=%+v", rec.Code, rec.Body, saved)
+	}
+	// The draft is attributed to the restaurant page, not the listing it came from.
+	if !strings.Contains(rec.Body.String(), "https://listed.example") || strings.Contains(rec.Body.String(), `"url":"https://listing.example"`) {
+		t.Fatalf("outcome should name the followed page: %s", rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"created"`) {
+		t.Fatalf("expected a created draft: %s", rec.Body)
+	}
+
+	// A listing whose entries are all out of ward saves nothing and says so once,
+	// rather than emitting a failed row per entry.
+	saved = nil
+	body = map[string]any{"ward_id": 1, "urls": []string{"https://barren.example"}}
+	rec = serveJSON(t, s, http.MethodPost, "/internal/discovery", authHeader(t, s, token.RoleInternal, nil), body)
+	if rec.Code != 200 || len(saved) != 0 {
+		t.Fatalf("out-of-ward entry must not be saved: %d %s saved=%+v", rec.Code, rec.Body, saved)
+	}
+	if !strings.Contains(rec.Body.String(), "followed 1 linked pages") {
+		t.Fatalf("expected one summary row: %s", rec.Body)
 	}
 }

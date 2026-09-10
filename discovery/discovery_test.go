@@ -89,3 +89,83 @@ func TestOversizeAndRedirect(t *testing.T) {
 		t.Fatal("allowed private redirect")
 	}
 }
+
+func TestSearchQuery(t *testing.T) {
+	q := SearchQuery("Chiyoda", "千代田区", "")
+	for _, want := range []string{"Chiyoda", "千代田区", "Tokyo", "gluten free", "グルテンフリー", "restaurant"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %q: %s", want, q)
+		}
+	}
+	// An empty keyword must not leave a double space in the query.
+	if strings.Contains(q, "  ") {
+		t.Errorf("collapsed whitespace expected: %q", q)
+	}
+	// Directory and marketplace pages list many businesses, so Extract rejects
+	// them; several also answer datacenter IPs with 403.
+	for _, host := range []string{"ubereats.com", "yelp.com", "tripadvisor.jp", "findmeglutenfree.com", "tabelog.com"} {
+		if !strings.Contains(q, "-site:"+host) {
+			t.Errorf("aggregator %s not excluded: %s", host, q)
+		}
+	}
+	// atly.com serves individual restaurant pages that capture cleanly; it must
+	// not be swept up with the directories.
+	if strings.Contains(q, "-site:atly.com") {
+		t.Error("atly.com excluded, but it yields capturable restaurant pages")
+	}
+	if got := SearchQuery("Chiyoda", "千代田区", "ramen"); !strings.Contains(got, "ramen") {
+		t.Errorf("operator keywords dropped: %s", got)
+	}
+}
+
+const listingLDHTML = `<html><script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","itemListElement":[
+ {"@type":"ListItem","position":1,"url":"https://example.com/restaurant/one"},
+ {"@type":"ListItem","position":2,"item":{"@type":"Restaurant","name":"Two","url":"https://example.com/restaurant/two"}},
+ {"@type":"ListItem","position":3,"url":"https://www.ubereats.com/jp/store/x"},
+ {"@type":"ListItem","position":4,"url":"https://www.instagram.com/foo"},
+ {"@type":"ListItem","position":5,"url":"https://example.com/hero.jpg"}
+]}</script><body><a href="/anchor-only-link">Ignored</a></body></html>`
+
+// A directory linking its own listing page to its own per-restaurant pages,
+// which is where the working captures actually came from.
+const sameHostLDHTML = `<html><script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","itemListElement":[
+ {"@type":"ListItem","position":1,"url":"/gluten-free/location/alpha"}
+]}</script></html>`
+
+const anchorOnlyHTML = `<html><body>
+<a href="/gluten-free/location/alpha">Alpha</a><a href="https://alpha-restaurant.jp/">Alpha site</a>
+</body></html>`
+
+func TestCandidateLinks(t *testing.T) {
+	got := CandidateLinks([]byte(listingLDHTML), "https://example.com/best/list", 6)
+	want := []string{"https://example.com/restaurant/one", "https://example.com/restaurant/two"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v, want %v (aggregator, social and asset links must be dropped)", got, want)
+	}
+
+	// Same-host links matter: directory listing pages link to their own location
+	// pages, which are exactly the individual restaurant pages Extract accepts.
+	got = CandidateLinks([]byte(sameHostLDHTML), "https://www.atly.com/best/gluten-free/list", 6)
+	if len(got) != 1 || got[0] != "https://www.atly.com/gluten-free/location/alpha" {
+		t.Errorf("same-host listing entry not followed: %v", got)
+	}
+
+	// Anchors are deliberately not scanned: on live listing pages they returned
+	// only site navigation and exhausted the caller's fetch budget.
+	if links := CandidateLinks([]byte(anchorOnlyHTML), "https://blog.example/guide", 6); len(links) != 0 {
+		t.Errorf("anchors must not be harvested: %v", links)
+	}
+
+	if links := CandidateLinks([]byte(listingLDHTML), "https://example.com/best/list", 1); len(links) != 1 {
+		t.Errorf("max ignored: %v", links)
+	}
+	if links := CandidateLinks([]byte(listingLDHTML), "https://example.com/best/list", 0); len(links) != 0 {
+		t.Errorf("zero budget must harvest nothing: %v", links)
+	}
+	// A single-restaurant page is not a listing; nothing useful to follow.
+	if links := CandidateLinks([]byte(restaurantHTML), "https://example.com/restaurant", 6); len(links) != 0 {
+		t.Errorf("captured page should yield no listing links: %v", links)
+	}
+}

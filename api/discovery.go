@@ -69,16 +69,58 @@ func (s *Server) internalDiscover(ctx *gin.Context) {
 			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "Automatic search requires BRAVE_SEARCH_API_KEY on the Go server. You can paste restaurant URLs instead."})
 			return
 		}
-		urls, err = s.discovery.Search(work, fmt.Sprintf("%s %s Tokyo %s gluten free グルテンフリー restaurant", ward.NameEn, ward.NameJa, strings.TrimSpace(req.Query)), req.Limit)
+		urls, err = s.discovery.Search(work, discovery.SearchQuery(ward.NameEn, ward.NameJa, strings.TrimSpace(req.Query)), req.Limit)
 		if err != nil {
 			ctx.JSON(502, gin.H{"error": err.Error()})
 			return
 		}
 	}
+	// Two-stage discovery. Web search overwhelmingly returns guides and directory
+	// pages rather than a restaurant's own site, and Extract rightly refuses to
+	// invent a record from a page listing many businesses. So a page that
+	// describes no single restaurant is treated as a source of links, and its
+	// entries are captured instead. maxFetches bounds the total page fetches so
+	// the request stays inside the work deadline; candidates are never expanded
+	// again, which keeps the crawl one hop deep.
+	const (
+		maxFetches      = 12
+		maxLinksPerPage = 6
+	)
 	outcomes := []discoveryOutcome{}
 	seen := map[string]bool{}
+	fetches := 0
+	wardEn := regexp.MustCompile(`(?i)(^|[^a-z])` + regexp.QuoteMeta(ward.NameEn) + `([^a-z]|$)`)
+
+	// draft records a captured candidate, saving it only when the captured
+	// address actually places the restaurant in the selected ward.
+	draft := func(source string, c discovery.Candidate) discoveryOutcome {
+		out := discoveryOutcome{URL: source, Status: "failed", Name: c.Name, Warnings: c.Warnings}
+		// Ward comes from captured address, not merely the search query.
+		address := strings.ToLower(c.Address)
+		if !strings.Contains(address, strings.ToLower(ward.NameJa)) && !wardEn.MatchString(address) {
+			out.Error = "Captured address does not match the selected ward; review manually"
+			return out
+		}
+		provenance, _ := json.MarshalIndent(c, "", "  ")
+		saved, created, err := s.store.CreateDiscoveryDraft(work, db.CreateStoreFullParams{
+			WardID: ward.ID, Name: c.Name, Address: c.Address, Phone: c.Phone, SourceUrl: c.SourceURL, Cuisine: c.Cuisine,
+			OpeningHours: []byte("[]"), Status: db.StoreStatusDraft, GfStatus: db.GfStatusOnRequest, PriceLevel: 2,
+			Notes: "Automatic discovery captured " + time.Now().UTC().Format(time.RFC3339) + "\nReview source claims, image rights, location and menus before approval.\n" + string(provenance),
+		})
+		if err != nil {
+			out.Error = "Could not save draft; retry is safe"
+			return out
+		}
+		out.StoreID = saved.ID.String()
+		out.Status = "duplicate"
+		if created {
+			out.Status = "created"
+		}
+		return out
+	}
+
 	for _, raw := range urls {
-		if len(outcomes) >= req.Limit {
+		if len(outcomes) >= req.Limit || fetches >= maxFetches {
 			break
 		}
 		u, err := discovery.URL(raw)
@@ -90,38 +132,42 @@ func (s *Server) internalDiscover(ctx *gin.Context) {
 			continue
 		}
 		seen[u.String()] = true
-		out := discoveryOutcome{URL: u.String(), Status: "failed"}
-		c, err := s.discovery.Capture(work, u.String())
-		if err != nil {
-			out.Error = err.Error()
-			outcomes = append(outcomes, out)
+		fetches++
+		c, candidates, err := s.discovery.CaptureOrLinks(work, u.String(), maxLinksPerPage)
+		if err == nil {
+			outcomes = append(outcomes, draft(u.String(), c))
 			continue
 		}
-		out.Name = c.Name
-		out.Warnings = c.Warnings
-		// Ward comes from captured address, not merely the search query.
-		address := strings.ToLower(c.Address)
-		if !strings.Contains(address, strings.ToLower(ward.NameJa)) && !regexp.MustCompile(`(?i)(^|[^a-z])`+regexp.QuoteMeta(ward.NameEn)+`([^a-z]|$)`).MatchString(address) {
-			out.Error = "Captured address does not match the selected ward; review manually"
-			outcomes = append(outcomes, out)
+		if len(candidates) == 0 {
+			outcomes = append(outcomes, discoveryOutcome{URL: u.String(), Status: "failed", Error: err.Error()})
 			continue
 		}
-		provenance, _ := json.MarshalIndent(c, "", "  ")
-		saved, created, err := s.store.CreateDiscoveryDraft(work, db.CreateStoreFullParams{
-			WardID: ward.ID, Name: c.Name, Address: c.Address, Phone: c.Phone, SourceUrl: c.SourceURL, Cuisine: c.Cuisine,
-			OpeningHours: []byte("[]"), Status: db.StoreStatusDraft, GfStatus: db.GfStatusOnRequest, PriceLevel: 2,
-			Notes: "Automatic discovery captured " + time.Now().UTC().Format(time.RFC3339) + "\nReview source claims, image rights, location and menus before approval.\n" + string(provenance),
-		})
-		if err != nil {
-			out.Error = "Could not save draft; retry is safe"
-		} else {
-			out.StoreID = saved.ID.String()
-			out.Status = "duplicate"
-			if created {
-				out.Status = "created"
+		// Stage two: follow the listing's entries. Only saved drafts are reported
+		// per link; a broad listing crosses many wards, and one failed row per
+		// entry would bury the useful results and exhaust the limit.
+		saved := 0
+		for _, link := range candidates {
+			if len(outcomes) >= req.Limit || fetches >= maxFetches {
+				break
+			}
+			if seen[link] {
+				continue
+			}
+			seen[link] = true
+			fetches++
+			lc, _, lerr := s.discovery.CaptureOrLinks(work, link, 0)
+			if lerr != nil {
+				continue
+			}
+			if out := draft(link, lc); out.Status != "failed" {
+				outcomes = append(outcomes, out)
+				saved++
 			}
 		}
-		outcomes = append(outcomes, out)
+		if saved == 0 {
+			outcomes = append(outcomes, discoveryOutcome{URL: u.String(), Status: "failed",
+				Error: fmt.Sprintf("Listing page: followed %d linked pages, none was a capturable restaurant in this ward", len(candidates))})
+		}
 	}
 	ctx.JSON(200, gin.H{"results": outcomes})
 }
